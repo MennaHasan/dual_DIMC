@@ -1,0 +1,17 @@
+package:
+  name: dual_dimc
+  authors:
+    - "Mennatalla Hassan <mennahasan20@gmail.com>"
+
+dependencies:
+  common_cells: {git: https://github.com/pulp-platform/common_cells.git, version: 1.21.0}
+
+sources:
+  - files:
+      - src/spatz_DIMC.sv
+      - src/spatz_DIMC_dual.sv
+
+  - target: tb
+    files:
+      - tb/tb_dimc_dual.sv
+      - tb/tb_DIMC_18_fixed.sv

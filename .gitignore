@@ -1,0 +1,4 @@
+.bender/
+compile.tcl
+*.vcd
+work/

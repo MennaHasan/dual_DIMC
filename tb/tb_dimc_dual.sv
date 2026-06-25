@@ -81,6 +81,14 @@
 // vsim -c tb_dimc_dual -do "run -all; quit"
 // vsim tb_dimc_dual -do "run -all"
 
+/** for making waveforms show**/
+// vsim -voptargs="+acc" tb_dimc_dual
+
+
+// env tb_dimc_dual
+// add wave clk COMPE RCSN READYN PSOUT SOUT RES_OUT out_data out_empty out_pop
+// run -all
+
 
 
 `timescale 1ns/1ps
@@ -899,7 +907,7 @@ module tb_dimc_dual;
     //
     // Reuses: kernel (Test 1) and feature (Test 5) already in DIMC 0.
     // =======================================================================
-    $display("[TB] Test 14: Pipelined MatVec DIMC 0 with 37 cycles total");
+    $display("[TB] Test 14: Pipelined MatVec DIMC 0 with 36 cycles total");
     begin
       automatic int test_fail = 0;
       sel = 1'b0;
@@ -920,7 +928,6 @@ module tb_dimc_dual;
 
       // Phase 1: trigger all 32 rows back-to-back, then let pipeline drain.
       // No out_pop here — all 32 results accumulate in the FIFO.
-      $display("[TB] Phase1 before loop: READYN=%0b out_empty=%0b", READYN, out_empty);
       for (int i = 0; i < NB_KERNEL_ROWS + 5; i++) begin
         @(posedge clk); #ApplTime;
         if (i < NB_KERNEL_ROWS) begin
@@ -933,22 +940,12 @@ module tb_dimc_dual;
           RCSN  = 1'b1; RCSN0 = 1'b1; RCSN1 = 1'b1; RCSN2 = 1'b1; RCSN3 = 1'b1;
         end
         #(TestTime - ApplTime);
-        $display("[TB] Phase1 i=%02d: READYN=%0b out_empty=%0b out_data=%0d",
-                 i, READYN, out_empty, out_data);
       end
-      $display("[TB] Phase1 after loop:  READYN=%0b out_empty=%0b out_data=%0d",
-               READYN, out_empty, out_data);
-
-      // Debug: show FIFO state right after Phase 1 without popping
-      $display("[TB] Test14 after Phase1: out_empty=%0b  out_data=%0d (exp row0=%0d)",
-               out_empty, out_data, golden_matvec[0][3:0]);
 
       // Phase 2: FIFO now holds all 32 results. Pop and check one per cycle.
       for (int r = 0; r < NB_KERNEL_ROWS; r++) begin
         @(posedge clk); #ApplTime;
         #(TestTime - ApplTime);
-        $display("[TB] Test14 DIMC0 row%02d: quant=%0d (exp %0d)",
-                 r, out_data, golden_matvec[r][3:0]);
         if (out_empty || out_data !== golden_matvec[r][3:0]) begin
           $error("[TB] Test14 DIMC0 row%0d: got %0d, expected %0d",
                  r, out_data, golden_matvec[r][3:0]);
@@ -965,6 +962,66 @@ module tb_dimc_dual;
 
       if (test_fail == 0) begin $display("[TB] Test 14: PASS"); pass_count++; end
       else                begin $display("[TB] Test 14: FAIL (%0d mismatches)", test_fail); fail_count++; end
+    end
+
+    // =======================================================================
+    // TEST 15: PIPELINED MATRIX-VECTOR MULTIPLICATION — DIMC 0, SINGLE PHASE
+    // =======================================================================
+    // Same as Test 14 but triggers and result collection are interleaved in
+    // one loop instead of two separate phases.
+    // Row r is triggered at i=r. Result is popped and checked at i=r+4.
+    // Total: NB_KERNEL_ROWS + 4 = 36 cycles.
+    // =======================================================================
+    $stop;   // REMOVE after debugging Test 15
+    $display("[TB] Test 15: Pipelined MatVec DIMC 0, single phase (36 cycles)");
+    begin
+      automatic int test_fail = 0;
+      sel = 1'b0;
+
+      // Drain any stale entries from previous tests
+      while (!out_empty) begin
+        out_pop = 1'b1; @(posedge clk); #ApplTime;
+      end
+      out_pop = 1'b0;
+
+      // Reload kernel and feature into DIMC 0
+      for (int r = 0; r < NB_KERNEL_ROWS; r++)
+        for (int s = 0; s < 4; s++)
+          write_kernel_dual(5'(r), 2'(s), kernel_stim[r*4 + s]);
+      load_feature_dual(feature_stim[0], feature_stim[1], feature_stim[2], feature_stim[3]);
+
+      for (int i = 0; i < NB_KERNEL_ROWS + 4; i++) begin
+        @(posedge clk); #ApplTime;
+        out_pop = 1'b0;
+
+        if (i < NB_KERNEL_ROWS) begin
+          COMPE = 1'b1; MODE = 2'b11; MCT = 8'd0;
+          RA    = {5'(i), 2'b00}; ADDIN = BIAS;
+          RCSN  = 1'b0; RCSN0 = 1'b0; RCSN1 = 1'b0; RCSN2 = 1'b0; RCSN3 = 1'b0;
+          WCSN  = 1'b1; WEN   = 1'b1; FCSN  = 1'b1;
+        end else begin
+          COMPE = 1'b0;
+          RCSN  = 1'b1; RCSN0 = 1'b1; RCSN1 = 1'b1; RCSN2 = 1'b1; RCSN3 = 1'b1;
+        end
+
+        if (i >= 5) begin
+          if (out_empty) begin
+            $error("[TB] Test15: out_fifo empty at row%0d", i - 4); test_fail++;
+          end else if (out_data !== golden_matvec[i - 4][3:0]) begin
+            $error("[TB] Test15 DIMC0 row%0d: got %0d, expected %0d",
+                   i - 4, out_data, golden_matvec[i - 4][3:0]); test_fail++;
+          end
+          out_pop = 1'b1;
+        end
+      end
+
+      @(posedge clk); #ApplTime;
+      out_pop = 1'b0;
+      COMPE   = 1'b0;
+      RCSN    = 1'b1; RCSN0 = 1'b1; RCSN1 = 1'b1; RCSN2 = 1'b1; RCSN3 = 1'b1;
+
+      if (test_fail == 0) begin $display("[TB] Test 15: PASS"); pass_count++; end
+      else                begin $display("[TB] Test 15: FAIL (%0d mismatches)", test_fail); fail_count++; end
     end
 
     // =========================================================================

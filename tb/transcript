@@ -1,0 +1,14 @@
+# vsim -c tb_dimc_dual -do "run -all; quit" 
+# Start time: 18:29:16 on Jun 25,2026
+# ** Note: (vsim-3812) Design is being optimized...
+# ** Error: ../src/spatz_DIMC_dual.sv(184): Module 'fifo_v3' is not defined.
+#  For instance 'u_inp_fifo' at path 'tb_dimc_dual.i_dut'
+# ** Error: ../src/spatz_DIMC_dual.sv(211): Module 'fifo_v3' is not defined.
+#  For instance 'u_wgt_fifo' at path 'tb_dimc_dual.i_dut'
+# ** Error: ../src/spatz_DIMC_dual.sv(240): Module 'fifo_v3' is not defined.
+#  For instance 'u_out_fifo' at path 'tb_dimc_dual.i_dut'
+# Optimization failed
+# ** Note: (vsim-12126) Error and warning message counts have been restored: Errors=3, Warnings=0.
+# Error loading design
+# End time: 18:29:16 on Jun 25,2026, Elapsed time: 0:00:00
+# Errors: 3, Warnings: 0

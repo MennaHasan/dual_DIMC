@@ -70,86 +70,6 @@
 
 `timescale 1ns/1ps
 
-// =============================================================================
-// MODULE: fifo — Parametric synchronous circular-buffer FIFO
-// =============================================================================
-// A simple single-clock FIFO using a circular buffer (array + head/tail pointers).
-//
-// KEY DESIGN CHOICE — extra MSB in pointers:
-//   The pointers are $clog2(DEPTH)+1 bits wide (one bit wider than needed to
-//   address the array).  The extra MSB is the "wrap flag":
-//     full  = lower bits equal AND MSBs differ  → one pointer lapped the other
-//     empty = all bits equal                    → both pointers at same position
-//   This avoids the ambiguity where head==tail could mean either empty or full.
-//
-// SIMULTANEOUS PUSH + POP:
-//   Both push and pop can fire in the same clock cycle.
-//   When the FIFO is full and a simultaneous push+pop occurs, the pop happens
-//   first (tail advances at the posedge) and then the push is allowed
-//   (because the FIFO is no longer full after the pop).
-//   The `push && !full` guard prevents writing into a truly full FIFO.
-//
-// DATA_OUT TIMING:
-//   data_out is combinational off mem[tail[PTR_W-2:0]] — it shows the CURRENT
-//   head entry continuously.  There is no read-enable; the head is always visible.
-//   This means the testbench can read data_out before asserting pop.
-// =============================================================================
-module fifo #(
-    parameter int WIDTH = 256,   // bit-width of each entry (256 for DIMC sections, 4 for results)
-    parameter int DEPTH = 8      // number of entries in the FIFO (must be a power of 2)
-)(
-    input  logic             clk,
-    input  logic             rst_n,    // active-low synchronous reset: clears head and tail to 0
-
-    // Write port
-    input  logic             push,      // assert to enqueue data_in; ignored if full
-    input  logic [WIDTH-1:0] data_in,   // data to write into the FIFO
-    output logic             full,      // high when no space remains (head lapped tail)
-
-    // Read port
-    input  logic             pop,       // assert to dequeue; advances tail; ignored if empty
-    output logic [WIDTH-1:0] data_out,  // continuously shows the current head entry (oldest element)
-    output logic             empty      // high when no data is available (head == tail)
-);
-    // PTR_W: pointer width.  One bit wider than needed for addressing so the
-    // MSB can serve as a wrap flag for full/empty detection.
-    localparam int PTR_W = $clog2(DEPTH) + 1;
-
-    logic [WIDTH-1:0]  mem  [0:DEPTH-1];   // circular storage array
-    logic [PTR_W-1:0]  head;               // write pointer: points to next empty slot
-    logic [PTR_W-1:0]  tail;               // read  pointer: points to oldest filled slot
-
-    // FULL:  lower PTR_W-1 bits match (same position within array) but MSBs differ
-    //        (head has wrapped around once more than tail → the array is completely full).
-    assign full      = (head[PTR_W-2:0] == tail[PTR_W-2:0]) && (head[PTR_W-1] != tail[PTR_W-1]);
-
-    // EMPTY: all bits match → head and tail point to the same position → nothing in FIFO.
-    assign empty     = (head == tail);
-
-    // DATA_OUT: combinational read of the current tail entry.
-    // Using only the lower PTR_W-1 bits as the array index (discards the wrap flag bit).
-    assign data_out  = mem[tail[PTR_W-2:0]];
-
-    always_ff @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            // Reset: clear both pointers.  Memory contents are not cleared but
-            // are irrelevant because empty=1 prevents any valid read.
-            head <= '0;
-            tail <= '0;
-        end else begin
-            // Push: write data_in at head, then advance head.
-            // Guard (!full) prevents overwriting valid data in a full FIFO.
-            if (push && !full) begin
-                mem[head[PTR_W-2:0]] <= data_in;
-                head <= head + 1'b1;
-            end
-            // Pop: advance tail to discard the oldest entry.
-            // Guard (!empty) prevents the tail from chasing the head on an empty FIFO.
-            if (pop && !empty)
-                tail <= tail + 1'b1;
-        end
-    end
-endmodule
 
 
 // =============================================================================
@@ -257,18 +177,22 @@ module dimc_dual #(
     logic                     inp_pop;       
     logic [SECTION_WIDTH-1:0] inp_rdata;     
 
-    fifo #(
-        .WIDTH (SECTION_WIDTH),
-        .DEPTH (INP_FIFO_DEPTH)
+    fifo_v3 #(
+        .FALL_THROUGH (1'b0),
+        .DATA_WIDTH   (SECTION_WIDTH),
+        .DEPTH        (INP_FIFO_DEPTH)
     ) u_inp_fifo (
-        .clk      (clk),
-        .rst_n    (rst_n),
-        .push     (inp_push),
-        .data_in  (inp_data),
-        .full     (inp_full),
-        .pop      (inp_pop),
-        .data_out (inp_rdata),
-        .empty    (inp_empty)
+        .clk_i      (clk),
+        .rst_ni     (rst_n),
+        .flush_i    (1'b0),
+        .testmode_i (1'b0),
+        .full_o     (inp_full),
+        .empty_o    (inp_empty),
+        .usage_o    (),
+        .data_i     (inp_data),
+        .push_i     (inp_push),
+        .data_o     (inp_rdata),
+        .pop_i      (inp_pop)
     );
 
     // =========================================================================
@@ -280,18 +204,22 @@ module dimc_dual #(
     logic                     wgt_pop;       
     logic [SECTION_WIDTH-1:0] wgt_rdata;     
 
-    fifo #(
-        .WIDTH (SECTION_WIDTH),
-        .DEPTH (WGT_FIFO_DEPTH)
+    fifo_v3 #(
+        .FALL_THROUGH (1'b0),
+        .DATA_WIDTH   (SECTION_WIDTH),
+        .DEPTH        (WGT_FIFO_DEPTH)
     ) u_wgt_fifo (
-        .clk      (clk),
-        .rst_n    (rst_n),
-        .push     (wgt_push),
-        .data_in  (wgt_data),
-        .full     (wgt_full),
-        .pop      (wgt_pop),
-        .data_out (wgt_rdata),
-        .empty    (wgt_empty)
+        .clk_i      (clk),
+        .rst_ni     (rst_n),
+        .flush_i    (1'b0),
+        .testmode_i (1'b0),
+        .full_o     (wgt_full),
+        .empty_o    (wgt_empty),
+        .usage_o    (),
+        .data_i     (wgt_data),
+        .push_i     (wgt_push),
+        .data_o     (wgt_rdata),
+        .pop_i      (wgt_pop)
     );
 
     // =========================================================================
@@ -305,18 +233,22 @@ module dimc_dual #(
     logic       out_push;     
     logic [3:0] out_wdata;    
 
-    fifo #(
-        .WIDTH (4),            // 4-bit entries (one quantized result per compute)
-        .DEPTH (OUT_FIFO_DEPTH)
+    fifo_v3 #(
+        .FALL_THROUGH (1'b0),
+        .DATA_WIDTH   (4),
+        .DEPTH        (OUT_FIFO_DEPTH)
     ) u_out_fifo (
-        .clk      (clk),
-        .rst_n    (rst_n),
-        .push     (out_push),
-        .data_in  (out_wdata),
-        .full     (out_full),
-        .pop      (out_pop),
-        .data_out (out_data),
-        .empty    (out_empty)
+        .clk_i      (clk),
+        .rst_ni     (rst_n),
+        .flush_i    (1'b0),
+        .testmode_i (1'b0),
+        .full_o     (out_full),
+        .empty_o    (out_empty),
+        .usage_o    (),
+        .data_i     (out_wdata),
+        .push_i     (out_push),
+        .data_o     (out_data),
+        .pop_i      (out_pop)
     );
 
     // =========================================================================
@@ -484,9 +416,7 @@ module dimc_dual #(
         // out_push therefore goes high at P(N+4) (combinationally).
         // The FIFO registers the push at P(N+5).  Testbench must wait 1 extra cycle.
         out_push  = ~READYN & ~out_full;
-        out_wdata = {RES_OUT, SOUT};  // pack the 4-bit quantized result
-        $display("[TB] inside fifo auto management:  READYN=%0b out_empty=%0b out_wdata=%0d, out_push=%0d",
-               READYN, out_empty, out_wdata,out_push);
+        out_wdata = {RES_OUT, SOUT};
     end
 
 endmodule

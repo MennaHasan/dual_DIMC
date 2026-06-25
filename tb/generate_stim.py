@@ -81,7 +81,7 @@ All files use hex notation so the SV testbench can load them with $readmemh.
 ============================================================
 USAGE
 ============================================================
-    python3 gen_stim.py [--seed SEED] [--outdir DIR]
+    python3 generate_stim.py [--seed SEED] [--outdir DIR]
 
     --seed   Random seed for reproducibility (default: 42).
              The same seed produces the same kernel and feature every

@@ -1,0 +1,138 @@
+m255
+K4
+z2
+!s11f vlog 2024.3 2024.09, Sep 10 2024
+13
+!s112 1.1
+!i10d 8192
+!i10e 25
+!i10f 100
+cModel Technology
+Z0 d/srv/home/mennatalla.hassan/dual_DIMC/tb
+vDIMC_18_fixed
+Z1 2../src/spatz_DIMC.sv|../src/spatz_DIMC_dual.sv|tb_dimc_dual.sv
+Z2 DXx6 sv_std 3 std 0 22 9oUSJO;AeEaW`l:M@^WG92
+Z3 !s110 1782404946
+!i10b 1
+!s100 dKOjDzfPkk=ZnQam>oVoT0
+IVMe^hlGY9b0:cPkUn]ZkT1
+S1
+R0
+Z4 w1782402327
+8../src/spatz_DIMC.sv
+F../src/spatz_DIMC.sv
+!i122 2
+L0 5 321
+Z5 VDg1SIo80bB@j0V0VzS_@n1
+Z6 OL;L;2024.3;79
+r1
+!s85 0
+31
+Z7 !s108 1782404946.000000
+Z8 !s107 tb_dimc_dual.sv|../src/spatz_DIMC_dual.sv|../src/spatz_DIMC.sv|
+Z9 !s90 -sv|../src/spatz_DIMC.sv|../src/spatz_DIMC_dual.sv|tb_dimc_dual.sv|
+!i113 0
+Z10 o-sv -L mtiAvm -L mtiRnm -L mtiOvm -L mtiUvm -L mtiUPF -L infact
+Z11 tCvgOpt 0
+n@d@i@m@c_18_fixed
+vdimc_dual
+R1
+R2
+R3
+!i10b 1
+!s100 j?mIDG4_U4?cRUF?c67]L1
+IPcQINR]WX`_Gba7TMVEiC2
+S1
+R0
+w1782404878
+Z12 8../src/spatz_DIMC_dual.sv
+Z13 F../src/spatz_DIMC_dual.sv
+!i122 2
+L0 78 347
+R5
+R6
+r1
+!s85 0
+31
+R7
+R8
+R9
+!i113 0
+R10
+R11
+vfifo
+R1
+R2
+!s110 1782403763
+!i10b 1
+!s100 ILeW:?;EQ4bM0JWKJ2jDd0
+Ihk_dk4Z[NdmEDCF_Q^]gh3
+S1
+R0
+R4
+R12
+R13
+!i122 0
+L0 97 56
+R5
+R6
+r1
+!s85 0
+31
+!s108 1782403763.000000
+R8
+R9
+!i113 0
+R10
+R11
+vtb_DIMC_18_fixed
+2../src/spatz_DIMC.sv|tb_DIMC_18_fixed.sv
+R2
+!s110 1782403773
+!i10b 1
+!s100 PhRLNlDjJ0e>aF6hg_N3k0
+I7CJSgO58l60KL50XZA0D@2
+S1
+R0
+R4
+8tb_DIMC_18_fixed.sv
+Ftb_DIMC_18_fixed.sv
+!i122 1
+L0 93 789
+R5
+R6
+r1
+!s85 0
+31
+!s108 1782403773.000000
+!s107 tb_DIMC_18_fixed.sv|../src/spatz_DIMC.sv|
+!s90 -sv|../src/spatz_DIMC.sv|tb_DIMC_18_fixed.sv|
+!i113 0
+R10
+R11
+ntb_@d@i@m@c_18_fixed
+vtb_dimc_dual
+R1
+R2
+R3
+!i10b 1
+!s100 1lgZHM`26BiQon8m3GoOi0
+IEzf]:m19fgGFB=VD_:GfB0
+S1
+R0
+R4
+8tb_dimc_dual.sv
+Ftb_dimc_dual.sv
+!i122 2
+L0 88 919
+R5
+R6
+r1
+!s85 0
+31
+R7
+R8
+R9
+!i113 0
+R10
+R11
