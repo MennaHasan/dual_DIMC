@@ -14,4 +14,4 @@ sources:
   - target: tb
     files:
       - tb/tb_dimc_dual.sv
-      - tb/tb_DIMC_18_fixed.sv
+      - tb/tb_DIMC.sv

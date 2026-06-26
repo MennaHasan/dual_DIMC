@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-gen_stim.py — Stimulus and golden-output generator for tb_DIMC_18_fixed.sv
+gen_stim.py — Stimulus and golden-output generator for tb_DIMC.sv
 
 ============================================================
 PURPOSE
 ============================================================
 This script generates all input stimuli (kernel weights, feature vector)
 and all expected golden outputs that the SystemVerilog testbench
-(tb_DIMC_18_fixed.sv) needs to verify the DIMC_18_fixed hardware.
+(tb_DIMC.sv) needs to verify the DIMC_18_fixed hardware.
 
 It acts as a SOFTWARE REFERENCE MODEL of the DUT:
   - The DUT (spatz_DIMC.sv) implements matrix-vector multiplication
@@ -17,7 +17,7 @@ It acts as a SOFTWARE REFERENCE MODEL of the DUT:
   - If the DUT and Python agree, the hardware is correct.
 
 IMPORTANT: The constants in this script (BIAS, MCT_VALS) must EXACTLY
-match the localparams of the same name in tb_DIMC_18_fixed.sv.
+match the localparams of the same name in tb_DIMC.sv.
 If you change one, you must change the other.
 
 ============================================================
@@ -92,7 +92,7 @@ USAGE
 CHANGING BIAS OR MCT_VALS
 ============================================================
   1. Edit BIAS / MCT_VALS constants below.
-  2. Update the matching localparams in tb_DIMC_18_fixed.sv.
+  2. Update the matching localparams in tb_DIMC.sv.
   3. Re-run this script to regenerate the golden files.
   No simulator recompile is needed — files are loaded at runtime.
 """
@@ -346,7 +346,7 @@ if __name__ == "__main__":
 # CHANGING BIAS OR MCT_VALS
 # -------------------------
 #   1. Edit the BIAS and MCT_VALS constants at the top of this file.
-#   2. Update the matching localparams in tb_DIMC_18_fixed.sv.
+#   2. Update the matching localparams in tb_DIMC.sv.
 #   3. Re-run this script to regenerate all six files.
 #   No simulator recompilation is needed — files are loaded at simulation runtime.
 #

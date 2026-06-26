@@ -8,42 +8,15 @@
  *
  * dimc_dual wraps two DIMC_18_fixed macros behind a shared port set
  * and three FIFOs (weight, input, output).  
- * ============================================================
- * KEY DIFFERENCES vs. tb_DIMC_18_fixed.sv
- * ============================================================
- * 1. `sel` selects the target DIMC:
- *    sel=0 → DIMC 0;  sel=1 → DIMC 1.
- *    All tasks operate on whichever DIMC sel currently points to.
- *
- * 2. Kernel data (D) is sourced from wgt_fifo inside dimc_dual.
- *    write_kernel_dual pushes one 256-bit section into wgt_fifo BEFORE
- *    asserting WCSN/WEN, so the FIFO's data_out (wgt_rdata) is valid
- *    when the write fires.  This costs one extra clock cycle vs. the
- *    direct-drive approach in tb_DIMC_18_fixed.sv.
- *
- * 3. Feature data (FD) is sourced from inp_fifo inside dimc_dual.
- *    load_feature_dual first pushes all 4 sections into inp_fifo (push phase),
- *    then drives FCSN=0 for four cycles (load phase).  Each FCSN=0 cycle
- *    both loads one section into the DIMC's feature_buf AND pops inp_fifo.
- *
- * 4. The output FIFO accumulates results automatically.
- *    dimc_dual pushes {RES_OUT, SOUT} into out_fifo whenever READYN goes low.
- *    IMPORTANT: out_push is combinational off READYN (a registered DUT output).
- *    This means the FIFO push fires at posedge P(N+5) — one cycle AFTER the
- *    posedge P(N+4) at which READYN goes low and compute_and_capture_dual returns.
- *    => Always wait one extra cycle (@(posedge clk); #ApplTime;) before checking
- *       out_empty or reading out_data.
- *
- * ============================================================
- * PIPELINE LATENCY (same as single-DIMC testbench)
- * ============================================================
+ * 
+ * PIPELINE LATENCY
+ * 
  *   Trigger at posedge P(N) + ApplTime → registered at P(N+1)
  *   P(N+1) — Stage 0: input capture
  *   P(N+2) — Stage 1: MCT masking
  *   P(N+3) — Stage 2: MAC accumulation
  *   P(N+4) — Stage 3: psum + ReLU + quant; READYN goes low
  *   P(N+5) — out_fifo registers the push (one cycle after READYN goes low)
- *   Outputs sampled at P(N+4) + TestTime (directly from DUT ports)
  *
  * ============================================================
  * TEST STRUCTURE
@@ -71,7 +44,7 @@
 // =============================================================================
 // Running the testbench
 // =============================================================================
-// cd hw/ip/spatz/tb
+// cd tb
 // python3 gen_stim.py --seed 14           (reuse same stimulus as single-DIMC TB)
 // module load questasim
 // vlib work
@@ -114,11 +87,11 @@ module tb_dimc_dual;
   parameter NB_MCT_VALS = 6;
 
   // BIAS: 24-bit signed constant bias added to every MAC result at Stage 3.
-  // Must match BIAS in gen_stim.py and tb_DIMC_18_fixed.sv.
+  // Must match BIAS in gen_stim.py and tb_DIMC.sv.
   localparam logic signed [23:0] BIAS = -2_080_000;
 
   // MCT_VALS: six threshold values, each trimming different numbers of active elements.
-  // Must match MCT_VALS in gen_stim.py and tb_DIMC_18_fixed.sv.
+  // Must match MCT_VALS in gen_stim.py and tb_DIMC.sv.
   localparam logic [7:0] MCT_VALS [NB_MCT_VALS] = '{8'd0, 8'd128, 8'd192, 8'd224, 8'd240, 8'd248};
 
   // Stimulus and golden arrays (filled by $readmemh at simulation start)
@@ -129,7 +102,7 @@ module tb_dimc_dual;
   logic [7:0]  golden_mct       [0 : NB_MCT_VALS-1];      // 4-bit results for row 0, one per MCT
   logic [23:0] golden_psout_mct [0 : NB_MCT_VALS-1];      // 24-bit psums for row 0, one per MCT
 
-  // Timing: same as tb_DIMC_18_fixed.sv (100 MHz, 2 ns apply, 8 ns test)
+  // Timing: same as tb_DIMC.sv (100 MHz, 2 ns apply, 8 ns test)
   localparam time ClkPeriod = 10ns;
   localparam time ApplTime  =  2ns;
   localparam time TestTime  =  8ns;

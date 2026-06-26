@@ -15,7 +15,7 @@ TB_DIR   := tb
 RTL_SRCS := $(SRC_DIR)/spatz_DIMC.sv \
             $(SRC_DIR)/spatz_DIMC_dual.sv
 
-TB_SRCS := $(TB_DIR)/tb_DIMC_18_fixed.sv \
+TB_SRCS := $(TB_DIR)/tb_DIMC.sv \
            $(TB_DIR)/tb_dimc_dual.sv
 
 
