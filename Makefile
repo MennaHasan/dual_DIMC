@@ -35,10 +35,10 @@ hw-compile: update-ips
 
 GUI ?= 0
 ifeq ($(GUI),1)
-VSIM_FLAGS =
+VSIM_FLAGS = -voptargs=+acc
 VSIM_DO    = "run -all"
 else
-VSIM_FLAGS = -c
+VSIM_FLAGS = -c -voptargs=+acc
 VSIM_DO    = "run -all; quit"
 endif
 

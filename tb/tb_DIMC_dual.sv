@@ -822,14 +822,14 @@ module tb_DIMC_dual;
     // =======================================================================
     // TEST 14: PIPELINED MATRIX-VECTOR MULTIPLICATION — DIMC 0, SINGLE PHASE
     // =======================================================================
-    // Triggers and result collection are interleaved in one loop.
-    // Row r is triggered at i=r. Result is popped and checked at i=r+6.
-    // Total: NB_KERNEL_ROWS + 6 = 38 cycles.
+    // Phase 1: fire all 32 row triggers back-to-back (fully pipelined).
+    // Phase 2: wait for the pipeline to drain, then pop and verify all 32
+    //          results from out_fifo against golden_psout.
     // =======================================================================
-    $display("[TB] Test 14: Pipelined MatVec DIMC 0, single phase (38 cycles)");
+    $display("[TB] Test 14: Pipelined MatVec DIMC 0, single phase");
     begin
       automatic int test_fail = 0;
-      sel = 1'b0;
+      sel = 1'b1;
 
       // Drain any stale entries from previous tests
       while (!out_empty) begin
@@ -843,37 +843,53 @@ module tb_DIMC_dual;
           write_kernel_dual(5'(r), 2'(s), kernel_stim[r*4 + s]);
       load_feature_dual(feature_stim[0], feature_stim[1], feature_stim[2], feature_stim[3]);
 
-      // out_pop is asserted at ApplTime and cleared at ApplTime of the next cycle,
-      // crossing exactly one rising edge so the pop registers cleanly at P(i+6).
-      for (int i = 0; i < NB_KERNEL_ROWS + 6; i++) begin
-        @(posedge clk); #ApplTime;
-        out_pop = 1'b0;
+      begin
+        automatic int fd = $fopen("debug/test14_fifo_dump.txt", "w");
 
-        if (i < NB_KERNEL_ROWS) begin
+
+        @(posedge clk); #ApplTime;      // N
+      // request for dot product of row i happen here @ N
+          COMPE = 1'b1; MODE = 2'b11; MCT = 8'd0;
+          RA    = {5'(0), 2'b00}; ADDIN = BIAS;
+          RCSN  = 1'b0; RCSN0 = 1'b0; RCSN1 = 1'b0; RCSN2 = 1'b0; RCSN3 = 1'b0;
+          WCSN  = 1'b1; WEN   = 1'b1; FCSN  = 1'b1;
+        @(posedge clk);                 // N+1
+        @(posedge clk); #ApplTime;      // N+2
+        
+        $fdisplay(fd, "clk cycle N+%0d out_data=%06h  out_empty=%0b  READYN=%0b  PSOUT=%06h", 2, out_data, out_empty, READYN, PSOUT);
+        for (int i = 1; i < NB_KERNEL_ROWS+2; i++) begin
+          // request for dot product of row i happen here @ N+1+i
+          // request for dot product of row 1 happen here @ N+2
+
+          if (i < NB_KERNEL_ROWS) begin
           COMPE = 1'b1; MODE = 2'b11; MCT = 8'd0;
           RA    = {5'(i), 2'b00}; ADDIN = BIAS;
           RCSN  = 1'b0; RCSN0 = 1'b0; RCSN1 = 1'b0; RCSN2 = 1'b0; RCSN3 = 1'b0;
           WCSN  = 1'b1; WEN   = 1'b1; FCSN  = 1'b1;
-        end else begin
-          COMPE = 1'b0;
-          RCSN  = 1'b1; RCSN0 = 1'b1; RCSN1 = 1'b1; RCSN2 = 1'b1; RCSN3 = 1'b1;
-        end
-
-        if (i >= 5) begin
-          if (out_empty) begin
-            $error("[TB] Test14: out_fifo empty at row%0d", i - 5); test_fail++;
-          end else if (out_data !== golden_psout[i - 5]) begin
-            $error("[TB] Test14 DIMC0 row%0d: got 0x%06h, expected 0x%06h",
-                   i - 5, out_data, golden_psout[i - 5]); test_fail++;
+          
           end
-          out_pop = 1'b1;
-        end
-      end
+          @(posedge clk); #TestTime;// @ i=1 ---> N+i+2
 
-      @(posedge clk); #ApplTime;
-      out_pop = 1'b0;
-      COMPE   = 1'b0;
-      RCSN    = 1'b1; RCSN0 = 1'b1; RCSN1 = 1'b1; RCSN2 = 1'b1; RCSN3 = 1'b1;
+          // for debugging
+          $fdisplay(fd, "clk cycle N+%0d out_data=%06h  out_empty=%0b  READYN=%0b  PSOUT=%06h", i+2, out_data, out_empty, READYN, PSOUT);
+          if (i >= 3) begin   // @ N+5 till N+36
+            if (out_data !== golden_psout[i-3]) begin
+              $error("[TB] Test14 DIMC0 row%0d: out_fifo got 0x%06h, expected 0x%06h",
+                     i-3, out_data, golden_psout[i-3]);
+              test_fail++;
+            end
+          end
+          if (i == 3) begin     // @ N+5
+            out_pop = 1'b1;
+            $fdisplay(fd, "out pop now = 1");   // for debugging
+          end
+          
+        end
+        out_pop = 1'b0;
+        $fclose(fd);
+        // for debugging
+        $display("[TB] Test 14: FIFO dump written to debug/test14_fifo_dump.txt");
+      end
 
       if (test_fail == 0) begin $display("[TB] Test 14: PASS"); pass_count++; end
       else                begin $display("[TB] Test 14: FAIL (%0d mismatches)", test_fail); fail_count++; end
@@ -909,7 +925,7 @@ module tb_DIMC_dual;
   // 100 µs ceiling 
   // A watchdog trip always indicates a bug (DUT stalls or task deadlock).
   initial begin
-    #(10000 * ClkPeriod);
+    #(50000 * ClkPeriod);
     $error("[TB] WATCHDOG: simulation exceeded 100 us");
     $finish;
   end

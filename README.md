@@ -19,8 +19,10 @@ make sim-single GUI=1
 make sim-dual GUI=1
 
 5. Adding signals innside Questasim 
+restart -f
 env tb_DIMC_dual
 add wave clk COMPE RCSN READYN PSOUT SOUT RES_OUT out_data out_empty out_pop
+run -all
 
 6. run simulation in Questasim
 run -all
