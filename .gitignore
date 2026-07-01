@@ -1,4 +1,4 @@
-.bender/
-compile.tcl
-*.vcd
-work/
+.claude/
+transcript
+vsim.wlf
+etch*
