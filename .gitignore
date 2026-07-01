@@ -1,4 +1,5 @@
 .claude/
+.bender/
 transcript
 vsim.wlf
 etch*
