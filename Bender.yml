@@ -8,10 +8,10 @@ dependencies:
 
 sources:
   - files:
-      - src/spatz_DIMC.sv
-      - src/spatz_DIMC_dual.sv
+      - rtl/spatz_DIMC.sv
+      - rtl/spatz_DIMC_dual.sv
 
   - target: tb
     files:
-      - tb/tb_dimc_dual.sv
+      - tb/tb_DIMC_dual.sv
       - tb/tb_DIMC.sv

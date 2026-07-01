@@ -1,4 +1,0 @@
-BEGIN 1:DIMC_18_fixed:fast:work
-    kernel_mem :  1:tb_dimc_dual:fast:work
-    feature_buf :  1:tb_dimc_dual:fast:work
-END 

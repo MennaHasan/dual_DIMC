@@ -1,1 +1,0 @@
-/srv/netapp/sw/CAD/Siemens/questa/2024.3/questasim/linux_x86_64/VisualizerRls/bin/viscom -nolock -quiet -jmem_size 1130784 work.tb_dimc_dual -quiet -auto_acc_if_foreign -work work +acc -allow_unnamed -o _opt1 -id 1-6c92cf08a2e5-6a3d5ef2-38442-26e681 +__betafsm

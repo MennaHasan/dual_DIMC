@@ -4,39 +4,56 @@
 # Author:
 # Mennatalla Hassan, University of Bologna
 
-BENDER := /srv/home/mennatalla.hassan/spatz_DIMC-project/install/bender/bender
-
+BENDER ?= /srv/home/mennatalla.hassan/spatz_DIMC-project/install/bender/bender
 
 # ── Directories ───────────────────────────────────────────────
-SRC_DIR  := src
+RTL_DIR  := rtl
 TB_DIR   := tb
-
-# ── Sources ───────────────────────────────────────────────────
-RTL_SRCS := $(SRC_DIR)/spatz_DIMC.sv \
-            $(SRC_DIR)/spatz_DIMC_dual.sv
-
-TB_SRCS := $(TB_DIR)/tb_DIMC.sv \
-           $(TB_DIR)/tb_dimc_dual.sv
-
-
+SIM_DIR  := sim
+STIM_DIR := stimuli
+WORK_DIR := $(SIM_DIR)/work
 
 # ── Default target ────────────────────────────────────────────
-.PHONY: all
-all: stim compile
+hw-all: stim hw-compile
 
 # ── Fetch dependencies ────────────────────────────────────────
-.PHONY: bender-update
-bender-update:
+update-ips:
 	$(BENDER) update
 
-# ── Compile RTL + both TBs ────────────────────────────────────
-.PHONY: compile
-compile: bender-update
-	vlog -sv $(shell $(BENDER) script flist -t tb)
-
 # ── Generate stimulus ─────────────────────────────────────────
-.PHONY: stim
 stim:
-	python3 $(TB_DIR)/generate_stim.py --outdir $(TB_DIR)
+	python3 $(STIM_DIR)/generate_stim.py --outdir $(STIM_DIR)
+
+# ── Compile RTL + TBs ─────────────────────────────────────────
+hw-compile: update-ips
+	mkdir -p $(SIM_DIR)
+	vlib $(WORK_DIR)
+	vlog -work $(WORK_DIR) -sv $(shell $(BENDER) script flist -t tb)
+
+# ── Run simulations ───────────────────────────────────────────
+# Use GUI=1 to open the QuestaSim GUI instead of batch mode:
+
+GUI ?= 0
+ifeq ($(GUI),1)
+VSIM_FLAGS =
+VSIM_DO    = "run -all"
+else
+VSIM_FLAGS = -c
+VSIM_DO    = "run -all; quit"
+endif
+
+sim-dual: stim hw-compile
+	vsim $(VSIM_FLAGS) -l $(SIM_DIR)/transcript -lib $(WORK_DIR) tb_DIMC_dual -do $(VSIM_DO)
+
+sim-single: stim hw-compile
+	vsim $(VSIM_FLAGS) -l $(SIM_DIR)/transcript -lib $(WORK_DIR) tb_DIMC -do $(VSIM_DO)
+
+# ── Remove all generated artefacts ────────────────────────────
+hw-clean:
+	rm -rf $(WORK_DIR)
+	rm -f  $(SIM_DIR)/compile.tcl $(SIM_DIR)/transcript $(SIM_DIR)/*.vcd
+	rm -f  transcript vsim.wlf *.vcd
+	rm -f  $(STIM_DIR)/*.txt
+	rm -f  etch*
 
 
