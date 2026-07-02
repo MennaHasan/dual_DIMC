@@ -3,3 +3,6 @@
 transcript
 vsim.wlf
 etch*
+
+# Generated simulation artefacts (bender binary, compiled libs, waveforms)
+sim/

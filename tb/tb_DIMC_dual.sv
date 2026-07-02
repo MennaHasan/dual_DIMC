@@ -857,7 +857,7 @@ module tb_DIMC_dual;
         @(posedge clk); #ApplTime;      // N+2
         
         $fdisplay(fd, "clk cycle N+%0d out_data=%06h  out_empty=%0b  READYN=%0b  PSOUT=%06h", 2, out_data, out_empty, READYN, PSOUT);
-        for (int i = 1; i < NB_KERNEL_ROWS+2; i++) begin
+        for (int i = 1; i < NB_KERNEL_ROWS+3; i++) begin
           // request for dot product of row i happen here @ N+1+i
           // request for dot product of row 1 happen here @ N+2
 

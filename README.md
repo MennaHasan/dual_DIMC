@@ -3,7 +3,7 @@ Implementation of 2 DIMC macros with double buffering
 
 STEPS:
 1. modules load
-/////////////////module load bender/0.31.0 
+module load bender/0.31.0   
 module load questasim
 
 2. comment or uncomment test defines to select comiled tests
@@ -22,7 +22,6 @@ make sim-dual GUI=1
 restart -f
 env tb_DIMC_dual
 add wave clk COMPE RCSN READYN PSOUT SOUT RES_OUT out_data out_empty out_pop
-run -all
 
 6. run simulation in Questasim
 run -all
