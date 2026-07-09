@@ -5,13 +5,18 @@ package:
 
 dependencies:
   common_cells: {git: https://github.com/pulp-platform/common_cells.git, version: 1.21.0}
+  hwpe-stream:  {git: "https://github.com/pulp-platform/hwpe-stream.git", version: 1.10.0}
+  hci:          {git: "https://github.com/pulp-platform/hci.git",         version: 2.6.0}
 
 sources:
   - files:
       - rtl/spatz_DIMC.sv
       - rtl/spatz_DIMC_dual.sv
+      - rtl/dimc_package.sv
+      - rtl/dimc_datapath.sv
 
   - target: tb
     files:
       - tb/tb_DIMC_dual.sv
       - tb/tb_DIMC.sv
+      - tb/tb_dimc_datapath.sv

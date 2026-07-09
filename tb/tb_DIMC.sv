@@ -2,7 +2,7 @@
  * tb_DIMC.sv
  *
  * PURPOSE
- * Testbench for the DIMC_18_fixed module (defined in spatz_DIMC.sv).
+ * Testbench for the spatz_DIMC module (defined in spatz_DIMC.sv).
  *
  * TEST STRUCTURE
  * All stimulus (kernel weights, feature vector) and golden outputs
@@ -63,11 +63,6 @@ module tb_DIMC;
   // Must equal len(MCT_VALS) in gen_stim.py.
   parameter NB_MCT_VALS = 6;
 
-  // BIAS: constant 24-bit signed value added to every MAC result at Stage 3.
-  // The large negative value centres the raw psum (≈ 2,080,000 for random
-  // uint8 data: 128 elements × E[k×f] ≈ 127.5²) near 8, the midpoint of
-  // the [0, 15] quantisation range.
-  // MUST match the BIAS constant in gen_stim.py.
   localparam logic signed [23:0] BIAS = -2_080_000;
 
   // MCT_VALS: the six threshold values swept in Test 4.
@@ -75,208 +70,74 @@ module tb_DIMC;
   // MUST match MCT_VALS in gen_stim.py.
   localparam logic [7:0] MCT_VALS [NB_MCT_VALS] = '{8'd0, 8'd128, 8'd192, 8'd224, 8'd240, 8'd248};
 
-  // -------------------------------------------------------------------------
   // Stimulus and golden arrays
   // These are filled by $readmemh at the start of the test sequence.
-  // -------------------------------------------------------------------------
-  // kernel_stim: flattened kernel SRAM contents.
-  //   Index = row*4 + section → 32 rows × 4 sections = 128 entries total.
-  //   Each entry is one 256-bit section of one kernel row.
   logic [SECTION_WIDTH-1:0] kernel_stim  [0 : NB_KERNEL_ROWS*4-1];
 
   // feature_stim: the 1024-bit feature vector split into 4 × 256-bit sections.
   //   feature_stim[0] = bits [255:0], feature_stim[3] = bits [1023:768].
   logic [SECTION_WIDTH-1:0] feature_stim [0 : 3];
 
-  // golden_4bit: expected 4-bit quantized output per row after ReLU+quant.
-  //   Computed as ReLU4( dot(kernel[r], feature, MCT=0) + BIAS ).
-  //   Stored in the lower nibble of each byte (upper nibble is 0).
   logic [7:0]  golden_4bit  [0 : NB_KERNEL_ROWS-1];
 
-  // golden_psout: expected 24-bit partial sum per row BEFORE ReLU+quant.
-  //   = ( dot(kernel[r], feature, MCT=0) + BIAS ) masked to 24 bits.
-  //   This is the raw pipeline output before clamping; used to debug
-  //   whether errors are in the accumulator or in the quantizer.
   logic [23:0] golden_psout   [0 : NB_KERNEL_ROWS-1];
 
-  // golden_mct: expected 4-bit result for row 0 at each MCT value.
-  //   Entry m corresponds to MCT_VALS[m].
   logic [7:0]  golden_mct     [0 : NB_MCT_VALS-1];
 
-  // golden_psout_mct: expected 24-bit psum for row 0 at each MCT value,
-  //   BEFORE ReLU+quant.  One entry per MCT_VALS element.
   logic [23:0] golden_psout_mct[0 : NB_MCT_VALS-1];
 
-  // -------------------------------------------------------------------------
   // Timing parameters
-  // -------------------------------------------------------------------------
-  // ClkPeriod: 10 ns = 100 MHz system clock.
   localparam time ClkPeriod = 10ns;
-
-  // ApplTime: signals are driven ApplTime after the rising edge.
-  //   This models realistic signal propagation and ensures that the DUT
-  //   sees stable inputs well before the next rising edge (setup = 8 ns).
   localparam time ApplTime  =  2ns;
-
-  // TestTime: outputs are sampled TestTime after the rising edge.
-  //   Chosen so that all combinational paths in Stage 3 have settled by
-  //   the time we read PSOUT, SOUT, and RES_OUT.
   localparam time TestTime  =  8ns;
-
-  // NUM_SECTIONS: how many 256-bit sections make up one kernel row or
-  //   feature vector (= 1024 / 256 = 4).
   localparam NUM_SECTIONS = 1024 / SECTION_WIDTH;
-
-  // ROW_WIDTH: total width of one kernel row or feature vector in bits.
   localparam ROW_WIDTH    = 1024;
 
   // =========================================================================
   // DUT SIGNAL DECLARATIONS
   // =========================================================================
-  // Signals are grouped by function.  Active-low signals end in N (READYN,
-  // FCSN, RCSN, WCSN, WEN, RESETn) — they are logically asserted when low.
-
-  // -------------------------------------------------------------------------
-  // Clocks and reset
-  // -------------------------------------------------------------------------
-  // RCK: the only clock the DUT uses.  WCK (write clock) is tied to RCK.
   logic RCK;
-  // RESETn: synchronous active-low reset.  While low the DUT holds all
-  // registers at zero (outputs = 0, memories = 0, READYN = 1).
   logic RESETn;
 
-  // -------------------------------------------------------------------------
-  // Status and mode
-  // -------------------------------------------------------------------------
-  // READYN (DUT output): goes LOW when Stage 3 of the pipeline holds a valid
-  //   result.  The testbench samples PSOUT / SOUT / RES_OUT only when READYN=0.
-  //   No initial value — driven entirely by the DUT.
   logic        READYN;
-
-  // COMPE: assert HIGH for exactly one clock cycle to launch a compute
-  //   operation.  When high, the DUT captures RA[6:2] (row index), MCT,
-  //   ADDIN and the stored feature vector, and begins the 4-stage pipeline.
   logic        COMPE  = 1'b0;
-
-  // FCSN: Feature Chip-Select (active-LOW).  While low, the DUT writes
-  //   FD into feature_buf[FA] on the next rising edge.
-  //   Initialised to 1 so the feature buffer is NOT written at time 0.
   logic        FCSN   = 1'b1;
-
-  // MODE: 2-bit operation mode.  2'b11 selects full 8-bit MAC mode.
-  //   This testbench always uses 8-bit mode; other modes are not tested here.
   logic [1:0]  MODE   = 2'b11;
-
-  // -------------------------------------------------------------------------
-  // Feature buffer write port
-  // -------------------------------------------------------------------------
-  // FA: 2-bit Feature Address — selects which 256-bit section of the
-  //   feature buffer (0-3) is written when FCSN = 0.
+  
   logic [1:0]               FA    = '0;
-
-  // FD: Feature Data — 256-bit section to load into the feature buffer.
-  //   Initialised to 0 so the bus is not floating before load_feature is called.
   logic [SECTION_WIDTH-1:0] FD    = '0;
-
-  // -------------------------------------------------------------------------
-  // Compute bias
-  // -------------------------------------------------------------------------
-  // ADDIN: 24-bit signed value added to the MAC accumulator result at Stage 3.
-  //   Used as a bias term: psum = MAC_result + ADDIN.
-  //   0 by default; tasks that need a bias set this before triggering compute.
+  
   logic [23:0]              ADDIN = '0;
-
-  // -------------------------------------------------------------------------
-  // Compute outputs (driven by DUT)
-  // -------------------------------------------------------------------------
-  // SOUT: MSB (bit 3) of the 4-bit quantized output.  Combined with RES_OUT
-  //   to form the full result: {RES_OUT[2:0], SOUT} = 4-bit quant value.
   logic                     SOUT;
 
-  // RES_OUT: lower 3 bits [2:0] of the 4-bit quantized output.
   logic [2:0]               RES_OUT;
-
-  // PSOUT: 24-bit partial sum BEFORE ReLU+quantization.
-  //   = MAC_accumulator + ADDIN, stored in a 24-bit register at Stage 3.
-  //   Useful for debugging: if PSOUT is correct but quant is wrong, the
-  //   error is in the ReLU/quantization stage.
   logic [23:0]              PSOUT;
-
-  // Q: 256-bit memory read output.  Valid one cycle after a read is triggered
-  //   (RCSN=0, COMPE=0).  Reflects kernel_mem[RA[6:2]][RA[1:0]].
   logic [SECTION_WIDTH-1:0] Q;
-
-  // -------------------------------------------------------------------------
-  // Kernel SRAM write port
-  // -------------------------------------------------------------------------
-  // D: 256-bit data bus for writing one section into the kernel SRAM.
-  //   Initialised to 0 so no garbage is written if WCSN/WEN glitch.
   logic [SECTION_WIDTH-1:0] D     = '0;
-
-  // RA: 7-bit read address.
-  //   RA[6:2] = row (0-31)   — which of the 32 kernel rows to read/compute
-  //   RA[1:0] = section (0-3) — which 256-bit section within that row
-  //   In COMPUTE mode (COMPE=1), only RA[6:2] matters; section bits are
-  //   ignored because the DUT reads all four sections automatically.
   logic [6:0]               RA    = '0;
-
-  // WA: 7-bit write address — same bit encoding as RA but for SRAM writes.
   logic [6:0]               WA    = '0;
-
-  // -------------------------------------------------------------------------
-  // Memory chip-selects (all active-LOW; start deasserted = 1)
-  // -------------------------------------------------------------------------
-  // RCSN: Global read chip-select.
-  //   In read mode (COMPE=0, RCSN=0): enables reading kernel_mem[RA] → Q.
-  //   In compute mode (COMPE=1): must also be 0 to enable the MAC datapath.
   logic RCSN  = 1'b1;
 
-  // RCSN0-3: Per-section read enables.  ALL four must be simultaneously
-  //   asserted (=0) together with RCSN and COMPE=1 to trigger a full-row MAC.
-  //   This ensures that all four 256-bit sections participate in the computation.
   logic RCSN0 = 1'b1;
   logic RCSN1 = 1'b1;
   logic RCSN2 = 1'b1;
   logic RCSN3 = 1'b1;
 
-  // WCK: write clock, tied directly to RCK (the DUT uses a single clock domain).
   logic WCK;
-
-  // WCSN: Write Chip-Select (active-LOW).  Combined with WEN to gate writes.
-  //   mem_write_en = ~COMPE & ~WCSN & ~WEN inside the DUT.
   logic WCSN  = 1'b1;
 
-  // WEN: Write Enable (active-LOW).  Both WCSN and WEN must be low to write.
   logic WEN   = 1'b1;
 
-  // -------------------------------------------------------------------------
-  // Write masking
-  // -------------------------------------------------------------------------
-  // M: 256-bit write mask.  A 1 in position i means bit i of D is written
-  //   through to the SRAM.  '1 (all ones) means write the full word.
   logic [SECTION_WIDTH-1:0] M   = '1;
 
-  // MCT: 8-bit Mask Count Threshold — trims the active elements of each MAC.
-  //   valid_bits = 1024 - MCT*4.  Element i is active when i*8 < valid_bits.
-  //   0 = full row (128 elements), higher values mask out trailing elements.
   logic [7:0]               MCT = '0;
 
-  // -------------------------------------------------------------------------
   // End-of-test flag
-  // -------------------------------------------------------------------------
-  // Asserted at the very end of the test sequence, useful for waveform viewers
-  // and any external monitoring scripts to detect simulation completion.
   logic eot = 1'b0;
 
-  // =========================================================================
-  // DUT INSTANTIATION
-  // =========================================================================
-  // The write clock is identical to the read clock — the DUT is fully
-  // synchronous on a single clock domain.  (spatz_DIMC.sv line 99 shows
-  // WCK entering the same clock network as RCK.)
   assign WCK = RCK;
 
-  DIMC_18_fixed #(
+  spatz_DIMC #(
     .SECTION_WIDTH (SECTION_WIDTH)
   ) i_dut (
     .RCK     (RCK),
@@ -307,15 +168,7 @@ module tb_DIMC;
     .MCT     (MCT)
   );
 
-  // =========================================================================
   // CLOCK GENERATION AND RESET
-  // =========================================================================
-  // The clock block runs first at time 0:
-  //   - RCK starts LOW, RESETn starts asserted (LOW = in reset).
-  //   - Three full clock cycles pass while reset is held (30 ns).
-  //     This ensures the DUT has multiple cycles to clear all registers.
-  //   - RESETn releases to HIGH; the DUT becomes operational.
-  //   - The clock continues toggling forever for the remainder of the sim.
   initial begin
     RCK    = 1'b0;
     RESETn = 1'b0;   // assert reset from simulation time 0
@@ -330,32 +183,6 @@ module tb_DIMC;
     end
   end
 
-  // =========================================================================
-  // PROTOCOL TASKS
-  // =========================================================================
-  // These tasks encapsulate the signal sequences needed to exercise the DUT.
-  // Each one waits for clock edges and drives signals with ApplTime delay
-  // so the DUT sees stable values well before the next rising edge.
-
-  // ---------------------------------------------------------------------------
-  // write_kernel_section — drives one 256-bit section into the kernel SRAM.
-  //
-  // HOW IT WORKS (two clock cycles):
-  //
-  //   Cycle A (apply):  Assert WCSN=0 and WEN=0 at ApplTime after posedge.
-  //                     Inside the DUT, mem_write_en = ~COMPE & ~WCSN & ~WEN
-  //                     goes HIGH.  Data (D) and address (WA) are stable.
-  //
-  //   Cycle B (latch):  The next rising edge registers the write:
-  //                     kernel_mem[WA[6:2]][WA[1:0]] <= D
-  //                     After ApplTime, WCSN and WEN are deasserted so that
-  //                     no second write fires on the following edge.
-  //
-  // ADDRESS ENCODING:
-  //   WA[6:2] = row index (5-bit, 0-31)
-  //   WA[1:0] = section index (2-bit, 0-3)
-  //   Combined: {row[4:0], sec[1:0]} = 7 bits → WA
-  // ---------------------------------------------------------------------------
   task automatic write_kernel_section(
     input [4:0]               row,   // which of the 32 kernel rows to write
     input [1:0]               sec,   // which 256-bit section within that row (0-3)
@@ -372,13 +199,7 @@ module tb_DIMC;
     D = '0;
   endtask
 
-  // ---------------------------------------------------------------------------
-  // write_full_kernel — writes all 128 sections (32 rows × 4 sections) into
-  // the kernel SRAM in 129 cycles using a pipelined approach.
-  //
-  //   Total number of cycles: 128 drive cycles + 1 final latch/deassert = 129 cycles.
-  // ---------------------------------------------------------------------------
-  task automatic write_full_kernel(
+ task automatic write_full_kernel(
     input [SECTION_WIDTH-1:0] data [0:NB_KERNEL_ROWS*4-1]   // 128 × 256-bit sections
   );
       for (int r = 0; r < NB_KERNEL_ROWS; r++) begin
@@ -393,21 +214,7 @@ module tb_DIMC;
       WCSN = 1'b1; WEN = 1'b1;    // deassert; clear data bus
       D = '0;
   endtask
-  // ---------------------------------------------------------------------------
-  // read_kernel — reads one 256-bit section from the kernel SRAM.
-  //
-  // HOW IT WORKS (one cycle latency):
-  //
-  //   Cycle A (apply):  Assert RCSN=0 with COMPE=0 and the desired address.
-  //                     Inside the DUT, mem_read_en = ~COMPE & ~RCSN goes HIGH.
-  //
-  //   Cycle B posedge:  The DUT registers Q <= kernel_mem[RA[6:2]][RA[1:0]].
-  //                     After TestTime from this posedge, Q is fully stable
-  //                     and the task captures it into rdata.
-  //
-  // COMPE must be LOW during a read; if COMPE were HIGH, the DUT would
-  // interpret the operation as a compute trigger rather than a memory read.
-  // ---------------------------------------------------------------------------
+  
   task automatic read_kernel(
     input  [4:0]               row,    // row to read
     input  [1:0]               sec,    // section within that row (0-3)
@@ -422,22 +229,7 @@ module tb_DIMC;
     RCSN  = 1'b1;   // deassert read enable
   endtask
 
-  // ---------------------------------------------------------------------------
-  // load_feature — writes all four 256-bit sections into the DUT's feature buffer.
-  //
-  // HOW IT WORKS:
-  //   The DUT has an internal 4-entry × 256-bit feature buffer.  When FCSN=0
-  //   on a rising edge, the DUT registers: feature_buf[FA] <= FD.
-  //
-  //   This task asserts FCSN for four consecutive cycles with FA stepping
-  //   0→1→2→3 and FD holding the corresponding section.  A fifth cycle
-  //   deasserts FCSN.  After this task returns, feature_buf holds the
-  //   complete 1024-bit feature vector, ready for the next compute.
-  //
-  //   THERE IS NO READ PORT on feature_buf.  Its contents can only be
-  //   verified indirectly through a compute operation (Test 3).
-  // ---------------------------------------------------------------------------
-  task automatic load_feature(
+task automatic load_feature(
     input [SECTION_WIDTH-1:0] f0,   // section 0: bits [255:0]
     input [SECTION_WIDTH-1:0] f1,   // section 1: bits [511:256]
     input [SECTION_WIDTH-1:0] f2,   // section 2: bits [767:512]
@@ -450,32 +242,7 @@ module tb_DIMC;
     @(posedge RCK); #ApplTime; FCSN = 1'b1; FD = '0;              // deassert; buffer retains values
   endtask
 
-  // ---------------------------------------------------------------------------
-  // compute_and_capture — triggers one MAC computation and captures the Stage 3 result.
-  //
-  // WHAT IT COMPUTES:
-  //   Using the kernel row currently stored at address RA[6:2] in the DUT's
-  //   SRAM and the feature vector currently in the feature buffer:
-  //     psum  = dot_masked(kernel[row], feature, mct_val) + bias
-  //     quant = ReLU4(psum)   [4-bit: 0 if negative, 15 if > 15, else psum]
-  //
-  // TRIGGER PROTOCOL:
-  //   1. Assert COMPE=1, all RCSN*=0, and set RA[6:2]=row, MCT=mct_val,
-  //      ADDIN=bias for exactly ONE clock cycle.
-  //   2. Deassert COMPE and RCSN* on the immediately following cycle.
-  //      The pipeline now carries the computation forward without needing
-  //      any further inputs.
-  //   3. Wait 3 more rising edges (Stages 1, 2, 3 complete).
-  //   4. Sample PSOUT, SOUT, RES_OUT at +TestTime after the 4th posedge.
-  //
-  // NOTE on RA section bits:
-  //   In compute mode, only RA[6:2] (the row index) matters.  RA[1:0]
-  //   is set to 00 but the DUT reads all four sections automatically.
-  //
-  // OUTPUTS:
-  //   psout — 24-bit PSOUT register value (before ReLU+quant)
-  //   quant — 4-bit {RES_OUT[2:0], SOUT} quantized result (after ReLU+quant)
-  // ---------------------------------------------------------------------------
+
   task automatic compute_and_capture(
     input  [4:0]  row,      // kernel row to compute dot product for (0-31)
     input  [23:0] bias,     // 24-bit signed bias added at Stage 3
@@ -512,21 +279,7 @@ module tb_DIMC;
     quant = {RES_OUT, SOUT};    // reassemble 4-bit result from its two output ports
   endtask
 
-  // ---------------------------------------------------------------------------
-  // compute_all_rows_pipelined — back-to-back triggers, one per cycle.
-  //
-  // Fires one compute trigger per cycle for all NB_KERNEL_ROWS rows, then
-  // collects results as they emerge 4 cycles later in the same loop.
-  //
-  //   Trigger phase  cycles  0 .. NB_KERNEL_ROWS-1 : COMPE=1, RA steps each cycle
-  //   Overlap        cycles  4 .. NB_KERNEL_ROWS-1 : trigger + capture simultaneously
-  //   Drain phase    cycles  NB_KERNEL_ROWS .. NB_KERNEL_ROWS+3 : COMPE=0, flush last 4
-  //
-  //   Total: NB_KERNEL_ROWS+4 cycles  (36 for 32 rows vs 128 in the serial approach)
-  //
-  // IMPORTANT: MCT is read from the live port inside the DUT (not pipelined).
-  // mct_val must stay constant — do not use this task for per-row MCT sweeps.
-  // ---------------------------------------------------------------------------
+  
   task automatic compute_all_rows_pipelined(
     input  [23:0] bias,
     input  [7:0]  mct_val,
@@ -565,11 +318,8 @@ module tb_DIMC;
     RCSN  = 1'b1; RCSN0 = 1'b1; RCSN1 = 1'b1; RCSN2 = 1'b1; RCSN3 = 1'b1;
   endtask
 
-  // =========================================================================
+ 
   // PASS / FAIL COUNTERS
-  // =========================================================================
-  // Each test increments exactly one counter.  The final summary displays
-  // both counts so you can see overall pass/fail at a glance.
   int pass_count = 0;
   int fail_count = 0;
 
@@ -589,14 +339,7 @@ module tb_DIMC;
     // One extra idle cycle so all DUT output registers settle cleanly from reset
     @(posedge RCK);
 
-    // -----------------------------------------------------------------------
-    // Load all stimulus and golden data from files generated by gen_stim.py.
-    //
-    // All files use $readmemh-compatible hexadecimal:
-    //   - 256-bit sections: 64 hex chars per line, MSB first (byte 31 first)
-    //   - 4-bit results:    2 hex chars per line, result in lower nibble
-    //   - 24-bit psums:     6 hex chars per line
-    // -----------------------------------------------------------------------
+    
     $readmemh(KERNEL_WEIGHTS_FILE,        kernel_stim);    // 128 entries: 32 rows × 4 sections
     $readmemh(FEATURE_VECTOR_FILE,        feature_stim);   //   4 entries: one per 256-bit section
     $readmemh(GOLDEN_MATVEC_FILE,          golden_4bit);  //  32 entries: expected 4-bit result per row
@@ -806,9 +549,7 @@ module tb_DIMC;
 `endif // TB_DIMC_TEST4
 
     
-    // =======================================================================
     // FINAL SUMMARY
-    // =======================================================================
     $display("[TB] ================================================");
     $display("[TB] RESULTS: %0d PASSED, %0d FAILED", pass_count, fail_count);
     $display("[TB] ================================================");
@@ -819,12 +560,7 @@ module tb_DIMC;
     $finish;
   end
 
-  // =========================================================================
   // WAVEFORM DUMP
-  // =========================================================================
-  // Dumps all signals to a VCD file for viewing in GTKWave or ModelSim.
-  // The depth=0 argument to $dumpvars captures the full hierarchy including
-  // DUT internals (pipeline registers, memories, etc.).
   initial begin
     $dumpfile("sim/tb_DIMC.vcd");
     $dumpvars(0, tb_DIMC);

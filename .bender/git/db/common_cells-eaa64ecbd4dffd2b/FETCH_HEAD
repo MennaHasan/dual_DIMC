@@ -15,18 +15,16 @@ cd88d4d3288d299c819b4d3754269fce080d0b34	not-for-merge	branch 'fix/addr-decode-i
 9be5ed7655b2b35974847fcfd079c98f3c2e397d	not-for-merge	branch 'fix/unread-xilinx' of https://github.com/pulp-platform/common_cells
 2c094d546372ad31a5a5d77586516fe4d49edb57	not-for-merge	branch 'flaviens-master' of https://github.com/pulp-platform/common_cells
 5a7cab001f1f5e15d2e847c6c5f787102f8b91a7	not-for-merge	branch 'id_queue-exists_data' of https://github.com/pulp-platform/common_cells
-63e1b679a70eca3a1d60d686bc1fa170ec08e1ab	not-for-merge	branch 'master' of https://github.com/pulp-platform/common_cells
+65881ba0300209f181ddd34a12a8a2e5df7c07c8	not-for-merge	branch 'master' of https://github.com/pulp-platform/common_cells
 7de94d7666802543a4b81e7659027ec1bca86542	not-for-merge	branch 'max_pow_two-tbenz' of https://github.com/pulp-platform/common_cells
 265b4cf5fe561cb837899c580f392ea93bf7e147	not-for-merge	branch 'multicast-xbar' of https://github.com/pulp-platform/common_cells
 d02a312e8650d18ef8e2d47be77c602ab85fa7dd	not-for-merge	branch 'nw/clr' of https://github.com/pulp-platform/common_cells
-c99da4f20964087aa8f0d38440cb1c7bf80f7bf4	not-for-merge	branch 'phsauter/cdc-clearable-refactor' of https://github.com/pulp-platform/common_cells
 1a1a35f729366c24a27127f458d048e93deee169	not-for-merge	branch 'picobello' of https://github.com/pulp-platform/common_cells
 0b8c10c21c9f810509bbd7bf86cfbdc4e6626c8e	not-for-merge	branch 'pulp-soc' of https://github.com/pulp-platform/common_cells
 3e433be23a022467a33bebc6c8ef7a6effb5b93e	not-for-merge	branch 'rr_distributor' of https://github.com/pulp-platform/common_cells
 7522cba64336f130a538b6f869618960210bcd98	not-for-merge	branch 'scheremo/vlt' of https://github.com/pulp-platform/common_cells
 2bd14dc4f20a3c384ca07a078d03d910f2e2894e	not-for-merge	branch 'snitch' of https://github.com/pulp-platform/common_cells
-5c32775b8fcecbce57517bb4a0715bf4d9fe5776	not-for-merge	branch 'v2-dev' of https://github.com/pulp-platform/common_cells
-cf8571b69cb10c2dc7c565de4963c762fa20596d	not-for-merge	branch 'v2-test' of https://github.com/pulp-platform/common_cells
+4f62c83c07866ccef55896af915558df2da52055	not-for-merge	branch 'v2-dev' of https://github.com/pulp-platform/common_cells
 5e5c3dc11a9f6b4f0a5ebd0c87a2981bd06ff9fb	not-for-merge	branch 'vega' of https://github.com/pulp-platform/common_cells
 d71f337d85ce2dc6c045b93bc3ea1c64e1cbfffa	not-for-merge	branch 'vivosoc4_TO' of https://github.com/pulp-platform/common_cells
 8d72ec6eb84445ac4cf2e1cfd4273d85e1b5eb40	not-for-merge	branch 'yt/carfield' of https://github.com/pulp-platform/common_cells
@@ -86,6 +84,7 @@ c27bce39ebb2e6bae52f60960814a2afca7bd4cb	not-for-merge	tag 'v1.37.0' of https://
 9afda9abb565971649c2aa0985639c096f351171	not-for-merge	tag 'v1.38.0' of https://github.com/pulp-platform/common_cells
 9ca8a7655f741e7dd5736669a20a301325194c28	not-for-merge	tag 'v1.39.0' of https://github.com/pulp-platform/common_cells
 7fdaaa140bf330574bc585dac23692120440a9e6	not-for-merge	tag 'v1.4.0' of https://github.com/pulp-platform/common_cells
+1281545696eb3fcba50ec5b4275993476a3c710e	not-for-merge	tag 'v1.40.0' of https://github.com/pulp-platform/common_cells
 4a5025558770bd98c8b2df596b0eafc084ed19d9	not-for-merge	tag 'v1.5.0' of https://github.com/pulp-platform/common_cells
 53dd5c50a43adc4d84c5ba5731ccb867d8f5a188	not-for-merge	tag 'v1.5.1' of https://github.com/pulp-platform/common_cells
 c87025ffa796b1e5b840c3f5516f905a62184f23	not-for-merge	tag 'v1.5.2' of https://github.com/pulp-platform/common_cells
@@ -101,6 +100,7 @@ c87025ffa796b1e5b840c3f5516f905a62184f23	not-for-merge	tag 'v1.5.2' of https://g
 2fa06364e3865325668fa32b35aa1de0213b8c24	not-for-merge	tag 'v1.7.6' of https://github.com/pulp-platform/common_cells
 21a060d2c2c75173312b82cc72db96a2c62e66c5	not-for-merge	tag 'v1.7.7' of https://github.com/pulp-platform/common_cells
 ef352e68becc9e33c64f5b051ad05c3d86b4d598	not-for-merge	tag 'v1.8.0' of https://github.com/pulp-platform/common_cells
+88e7f97210dfce5da38390bfb9d3c21eb998810c	not-for-merge	tag 'v2.0.0-beta' of https://github.com/pulp-platform/common_cells
 a7992b6e5316ee4fa3e5396e6d4c568ef595e7e1	not-for-merge	tag 'vega_v1.10.0' of https://github.com/pulp-platform/common_cells
 c3921426d923c601e3289e59985eaca72dce03fe	not-for-merge	tag 'vega_v1.10.1' of https://github.com/pulp-platform/common_cells
 a8b2d5fe061f3aec1dbbb21f6afb1d5618204944	not-for-merge	tag 'vega_v1.10.2' of https://github.com/pulp-platform/common_cells

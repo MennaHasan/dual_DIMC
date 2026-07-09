@@ -1,6 +1,6 @@
-clk cycle N+2 out_data=000000  out_empty=1  READYN=1  PSOUT=000000
-clk cycle N+3 out_data=000000  out_empty=1  READYN=1  PSOUT=000000
-clk cycle N+4 out_data=000000  out_empty=1  READYN=0  PSOUT=006c46
+clk cycle N+2 out_data=fd9b6a  out_empty=1  READYN=1  PSOUT=fd4d28
+clk cycle N+3 out_data=fd9b6a  out_empty=1  READYN=1  PSOUT=fd4d28
+clk cycle N+4 out_data=fd9b6a  out_empty=1  READYN=0  PSOUT=006c46
 clk cycle N+5 out_data=006c46  out_empty=0  READYN=0  PSOUT=014f30
 out pop now = 1
 clk cycle N+6 out_data=014f30  out_empty=0  READYN=0  PSOUT=fb8c9c

@@ -2,21 +2,21 @@
 
 `timescale 1ns/1ps
 
-    module DIMC_18_fixed #(
+    module spatz_DIMC #(
     
  	    //Parameter for Section Width
     parameter SECTION_WIDTH = 256   // can be 256, 512, or 1024
 )(
 
     // System Interface
-    input  logic        RCK,        // Main clock
-    input  logic        RESETn,     // Active-low reset
+    input  logic                        RCK,        // Main clock
+    input  logic                        RESETn,     // Active-low reset
     
     // Control Signals
-    output logic        READYN,     // Active-low ready (output valid)
-    input  logic        COMPE,      // Operation mode (1=compute, -
-    input  logic        FCSN,       // Feature buffer chip select (active-low)
-    input  logic [1:0]  MODE,       // Bit resolution (0=1b, 1=2b, 2=4b, 3=8b)
+    output logic                        READYN,     // Active-low ready (output valid)
+    input  logic                        COMPE,      // Operation mode (1=compute, -
+    input  logic                        FCSN,       // Feature buffer chip select (active-low)
+    input  logic [1:0]                  MODE,       // Bit resolution (0=1b, 1=2b, 2=4b, 3=8b)
     
     // Address/Data Interface
     input  logic [1:0]                  FA,        // Feature buffer address
@@ -31,39 +31,36 @@
     input  logic [6:0]                  WA,        // Write address
     
     // Memory Control
-    input  logic        RCSN,       // Read chip select (active-low)
-    input  logic        RCSN0,      // Computation control
-    input  logic        RCSN1,      // Computation control
-    input  logic        RCSN2,      // Computation control
-    input  logic        RCSN3,      // Computation control
-    input  logic        WCK,        // Write clock
-    input  logic        WCSN,       // Write chip select (active-low)
-    input  logic        WEN,        // Write enable (active-low)
+    input  logic                        RCSN,       // Read chip select (active-low)
+    input  logic                        RCSN0,      // Computation control
+    input  logic                        RCSN1,      // Computation control
+    input  logic                        RCSN2,      // Computation control
+    input  logic                        RCSN3,      // Computation control
+    input  logic                        WCK,        // Write clock
+    input  logic                        WCSN,       // Write chip select (active-low)
+    input  logic                        WEN,        // Write enable (active-low)
     
     // Masking Signals
     input  logic [SECTION_WIDTH-1:0]    M,         // Bitwise write mask
-    input  logic [7:0]                  MCT        // Masking coding thermometric
-    
-   
+    input  logic [7:0]                  MCT        // Masking coding thermometric   
 );
 
 
-//------------------------------------------------------------------------------
-// Derived Parameters
-//------------------------------------------------------------------------------
-
+/*******************************************************************************
+* Derived Parameters
+*******************************************************************************/
 localparam NUM_SECTIONS = 1024/SECTION_WIDTH;
 localparam ROW_WIDTH = NUM_SECTIONS * SECTION_WIDTH;
 
-//------------------------------------------------------------------------------
-// Memory Architecture
-//------------------------------------------------------------------------------
-logic [NUM_SECTIONS-1:0][SECTION_WIDTH-1:0] kernel_mem [31:0];  // 32 rows, 4 sections, 256 bits each
-logic [NUM_SECTIONS-1:0][SECTION_WIDTH-1:0] feature_buf;       // 4 sections, 256 bits each
+/*******************************************************************************
+* Memory Architecture
+*******************************************************************************/
+logic [NUM_SECTIONS-1:0][SECTION_WIDTH-1:0] kernel_mem [31:0];  // 32 rows, 1024/SECTION_WIDTH sections, SECTION_WIDTH bits each
+logic [NUM_SECTIONS-1:0][SECTION_WIDTH-1:0] feature_buf;        // 1024/SECTION_WIDTH sections, SECTION_WIDTH bits each
 
-//------------------------------------------------------------------------------
-// Control Signals and Registers
-//------------------------------------------------------------------------------
+/*******************************************************************************
+* Control Signals and Registers
+*******************************************************************************/
 logic compute_trigger;
 logic mem_read_en;
 logic mem_write_en;
@@ -82,21 +79,28 @@ logic [1:0]  pipeline_mode [0:3];
 logic [ROW_WIDTH-1:0] masked_kernel;
 logic [ROW_WIDTH-1:0] masked_feature;
 logic [23:0] comp_result;
+logic [ROW_WIDTH-1:0] xnor_result;
+logic [10:0] popcount;
+logic [1:0] k_val2b;
+logic [1:0] f_val2b;
+logic [3:0] k_val4b;
+logic [3:0] f_val4b;
+logic [7:0] k_val8b;
+logic [7:0] f_val8b;
 
 // Output logic
 logic [23:0] psum;
 logic [3:0] result_4bit;
 
 
-//------------------------------------------------------------------------------
-// Combinational Logic Blocks
-//------------------------------------------------------------------------------
+/*******************************************************************************
+* Combinational Logic Blocks
+*******************************************************************************/
 
 // Control signal assignments
 assign compute_trigger = COMPE & ~RCSN & ~RCSN0 & ~RCSN1 & ~RCSN2 & ~RCSN3;
 assign mem_read_en     = ~COMPE & ~RCSN;
 assign mem_write_en    = ~COMPE & ~WCSN & ~WEN;
-//assign WCK = RCK;  // Write clock tied to main clock
 
 // Valid bits calculation
 always_comb begin
@@ -124,9 +128,6 @@ always_comb begin
     case (pipeline_mode[1])
         // 1-bit Mode: XNOR + Popcount
         2'b00: begin
-            logic [ROW_WIDTH-1:0] xnor_result;
-            logic [10:0] popcount;
-            
             xnor_result = ~(masked_kernel ^ masked_feature);
             popcount = $countones(xnor_result);
             comp_result = popcount;
@@ -135,27 +136,27 @@ always_comb begin
         // 2-bit Mode: Vector multiplication
         2'b01: begin
             for (int i = 0; i < 512; i++) begin
-                automatic logic [1:0] k_val = masked_kernel[i*2 +: 2];
-                automatic logic [1:0] f_val = masked_feature[i*2 +: 2];
-                comp_result += k_val * f_val;
+                k_val2b = masked_kernel[i*2 +: 2];
+                f_val2b = masked_feature[i*2 +: 2];
+                comp_result += k_val2b * f_val2b;
             end
         end
         
         // 4-bit Mode: Vector multiplication
         2'b10: begin
             for (int i = 0; i < 256; i++) begin
-                automatic logic [3:0] k_val = masked_kernel[i*4 +: 4];
-                automatic logic [3:0] f_val = masked_feature[i*4 +: 4];
-                comp_result += k_val * f_val;
+                k_val4b = masked_kernel[i*4 +: 4];
+                f_val4b = masked_feature[i*4 +: 4];
+                comp_result += k_val4b * f_val4b;
             end
         end
         
         // Default: 8-bit Mode (vector multiplication)
         default: begin
              for (int i = 0; i < ROW_WIDTH/8; i++) begin
-                 automatic logic [7:0] k_val = masked_kernel[i*8 +: 8];
-                 automatic logic [7:0] f_val = masked_feature[i*8 +: 8];
-                 comp_result += k_val * f_val;
+                 k_val8b = masked_kernel[i*8 +: 8];
+                 f_val8b = masked_feature[i*8 +: 8];
+                 comp_result += k_val8b * f_val8b;
              end
          end
    endcase
@@ -177,10 +178,9 @@ always_comb begin
     end
 end
 
-//------------------------------------------------------------------------------
-// Sequential Logic Blocks
-//------------------------------------------------------------------------------
-
+/*******************************************************************************
+* Sequential Logic Blocks
+*******************************************************************************/
 
 // Memory Mode Operations
 always_ff @(posedge RCK or negedge RESETn) begin

@@ -4,9 +4,9 @@
  * ============================================================
  * PURPOSE
  * ============================================================
- * Testbench for dimc_dual (spatz_DIMC_dual.sv).
+ * Testbench for spatz_DIMC_dual (spatz_DIMC_dual.sv).
  *
- * dimc_dual wraps two DIMC_18_fixed macros behind a shared port set
+ * spatz_DIMC_dual wraps two spatz_DIMC macros behind a shared port set
  * and three FIFOs (weight, input, output).  
  * 
  * PIPELINE LATENCY
@@ -46,7 +46,7 @@
 // ── Test enable macros ────────────────────────────────────────────────────
 // Comment out a line to skip that test at compile time.
 
-/*
+
 `define TB_DUAL_TEST0    // Reset verification
 `define TB_DUAL_TEST1    // Kernel write DIMC 0
 `define TB_DUAL_TEST5    // Feature load DIMC 0 + dot product row 1 (requires Tests 1 and 3)
@@ -63,7 +63,7 @@
 `define TB_DUAL_TEST12   // MCT sweep DIMC 0 (requires Tests 1 and 5)
 `define TB_DUAL_TEST13   // Overlapping computes DIMC0 row 5 / DIMC1 row 7
 
-*/
+
 
 
 
@@ -142,12 +142,11 @@ module tb_DIMC_dual;
   logic [SECTION_WIDTH-1:0] M   = '1;   // write mask: all ones = full word write
   logic [7:0]               MCT = '0;   // MCT=0: all 128 elements active (no masking)
 
-  // Outputs from the selected DIMC (muxed inside dimc_dual by sel)
-  logic                     READYN;    
-  logic [SECTION_WIDTH-1:0] Q;         
-  logic                     SOUT;      
-  logic [2:0]               RES_OUT;   
-  logic [23:0]              PSOUT;     
+  // Outputs from the selected DIMC (muxed inside spatz_DIMC_dual by sel)
+  // Q/SOUT/RES_OUT are no longer ports on spatz_DIMC_dual -- read them via
+  // hierarchical reference (i_dut.Q / i_dut.SOUT / i_dut.RES_OUT) instead.
+  logic                     READYN;
+  logic [23:0]              PSOUT;
 
   // Input feature FIFO interface (driven by this testbench)
   logic                     inp_push = 1'b0;  // push inp_data when high and not full
@@ -167,17 +166,13 @@ module tb_DIMC_dual;
   logic        out_full;           // DUT output: FIFO is full (should never happen in these tests)
   logic        out_empty;          // DUT output: FIFO is empty (no results ready)
 
-  // Diagnostic: both macros' PSOUT and Q simultaneously (not muxed by sel)
-  logic [1:0][23:0]              mac_psout;   
-  logic [1:0][SECTION_WIDTH-1:0] mac_q;       
-
   // End-of-test flag — asserted when simulation finishes
   logic eot = 1'b0;
 
   // =========================================================================
   // DUT INSTANTIATION
   // =========================================================================
-  dimc_dual #(
+  spatz_DIMC_dual #(
     .SECTION_WIDTH  (SECTION_WIDTH),
     .NB_KERNEL_ROWS (NB_KERNEL_ROWS)
   ) i_dut (
@@ -201,9 +196,6 @@ module tb_DIMC_dual;
     .M        (M),
     .MCT      (MCT),
     .READYN   (READYN),
-    .Q        (Q),
-    .SOUT     (SOUT),
-    .RES_OUT  (RES_OUT),
     .PSOUT    (PSOUT),
     .inp_push (inp_push),
     .inp_data (inp_data),
@@ -216,9 +208,7 @@ module tb_DIMC_dual;
     .out_pop  (out_pop),
     .out_data (out_data),
     .out_full (out_full),
-    .out_empty(out_empty),
-    .mac_psout(mac_psout),
-    .mac_q    (mac_q)
+    .out_empty(out_empty)
   );
 
   // CLOCK GENERATION AND RESET
@@ -237,7 +227,7 @@ module tb_DIMC_dual;
   end
 
   // PROTOCOL TASKS
-  task automatic write_kernel_dual(
+  task automatic write_kernel_section_dual(
     input [4:0]               row,   // kernel row to write (0-31)
     input [1:0]               sec,   // section within row (0-3, each 256 bits)
     input [SECTION_WIDTH-1:0] data   // 256-bit data to write
@@ -258,6 +248,35 @@ module tb_DIMC_dual;
     WCSN = 1'b1; WEN = 1'b1;
   endtask
 
+
+  task automatic write_full_kernel_dual(
+    input logic [SECTION_WIDTH-1:0] kernel [0:NB_KERNEL_ROWS*4-1]
+  );
+    int NB_SECTIONS = NB_KERNEL_ROWS*4;
+
+    // Cycle 1 (alignment): nothing pushed/written yet; set up section 0's push.
+    @(posedge clk); #ApplTime;
+    COMPE = 1'b0; RCSN = 1'b1; FCSN = 1'b1; M = '1;
+    WCSN  = 1'b1; WEN  = 1'b1;
+    wgt_push = 1'b1; wgt_data = kernel[0];
+
+    // Each edge: push section i+1 (if any left) while writing section i-1
+    // (its push registered 1 edge earlier), addressed by {row,sec} = i-1.
+    for (int i = 0; i < NB_SECTIONS; i++) begin
+      @(posedge clk); #ApplTime;
+      if (i < NB_SECTIONS-1)
+        wgt_data = kernel[i+1];
+      else
+        wgt_push = 1'b0;              // last section already pushed this edge
+      WA = 7'(i);                     // {row,sec} of section i -- write it next edge
+      WCSN = 1'b0; WEN = 1'b0;
+    end
+
+    // Final edge: last section's write completes.
+    @(posedge clk); #ApplTime;
+    WCSN = 1'b1; WEN = 1'b1;
+  endtask
+
   // read_kernel_dual — reads one 256-bit section from the selected DIMC's SRAM.
   task automatic read_kernel_dual(
     input  [4:0]               row,    // row to read (0-31)
@@ -268,30 +287,42 @@ module tb_DIMC_dual;
     COMPE = 1'b0; RCSN = 1'b0; RA = {row, sec};
     WCSN = 1'b1; WEN = 1'b1; FCSN = 1'b1;   // write and feature paths idle
     @(posedge clk); #TestTime;
-    rdata = Q;
+    rdata = i_dut.Q;   // Q is internal to spatz_DIMC_dual, not a port
     RCSN  = 1'b1;
   endtask
 
   // load_feature_dual — writes all 4 sections of the feature vector into the
-    task automatic load_feature_dual(
-    input [SECTION_WIDTH-1:0] f0,   
-    input [SECTION_WIDTH-1:0] f1,   
-    input [SECTION_WIDTH-1:0] f2,   
-    input [SECTION_WIDTH-1:0] f3    
+  // feature buffer. Push and load are interleaved rather than phase-separated:
+  // a section's push registers at edge N, so inp_fifo's empty_o/data_o already
+  // reflect it starting the very next edge -- there's no need to wait for all
+  // 4 pushes before starting to drain. Loading section i therefore starts
+  // exactly 1 cycle after section i's push registers, overlapping with the
+  // push of section i+1. Total: 6 edges (1 alignment + 5), vs. 9 for a fully
+  // phase-separated push-then-load version.
+  task automatic load_feature_dual(
+    input [SECTION_WIDTH-1:0] f0,
+    input [SECTION_WIDTH-1:0] f1,
+    input [SECTION_WIDTH-1:0] f2,
+    input [SECTION_WIDTH-1:0] f3
   );
-    // --- Push phase: load all four sections into inp_fifo ---
-    @(posedge clk); #ApplTime; inp_push = 1'b1; inp_data = f0;   
-    @(posedge clk); #ApplTime; inp_data = f1;                     
-    @(posedge clk); #ApplTime; inp_data = f2;                     
-    @(posedge clk); #ApplTime; inp_data = f3;                     
-    @(posedge clk); #ApplTime; inp_push = 1'b0;                   
+    @(posedge clk); #ApplTime;
+    inp_push = 1'b1; inp_data = f0;                // set up for f0 push 
 
-    // --- Load phase: FD = inp_fifo head; one section loaded + popped per cycle ---
-    FCSN = 1'b0; FA = 2'd0;                       // cycle A: feature_buf[0] ← f0 at posedge
-    @(posedge clk); #ApplTime; FA = 2'd1;          // cycle B: feature_buf[1] ← f1
-    @(posedge clk); #ApplTime; FA = 2'd2;          // cycle C: feature_buf[2] ← f2
-    @(posedge clk); #ApplTime; FA = 2'd3;          // cycle D: feature_buf[3] ← f3
-    @(posedge clk); #ApplTime; FCSN = 1'b1; FA = '0;   // deassert; buffer retains all values
+    @(posedge clk); #ApplTime;                     // f0 pushed this edge
+    inp_data = f1;
+    FCSN = 1'b0; FA = 2'd0;                        // set up for f0 load
+
+    @(posedge clk); #ApplTime;                     // f1 pushed; f0 now loaded 
+    inp_data = f2; FA = 2'd1;
+
+    @(posedge clk); #ApplTime;                     // f2 pushed; f1 now loaded 
+    inp_data = f3; FA = 2'd2;
+
+    @(posedge clk); #ApplTime;                     // f3 pushed, f2 now loaded 
+    inp_push = 1'b0; FA = 2'd3;
+
+    @(posedge clk); #ApplTime;                     // f3 now loaded 
+    FCSN = 1'b1; FA = '0;                          // deassert; buffer retains all four values
   endtask
 
   // ---------------------------------------------------------------------------
@@ -330,7 +361,7 @@ module tb_DIMC_dual;
     if (READYN !== 1'b0)
       $error("[TB] READYN did not go low after 4-cycle pipeline (row=%0d, sel=%0d)", row, sel);
     psout = PSOUT;
-    quant = {RES_OUT, SOUT};   // pack 4-bit result
+    quant = {i_dut.RES_OUT, i_dut.SOUT};   // pack 4-bit result (internal signals, not ports)
     // NOTE: 
     // Caller must wait one extra posedge before checking out_empty.
   endtask
@@ -372,18 +403,18 @@ module tb_DIMC_dual;
       // Check DIMC 0 via sel mux
       sel = 1'b0;
       @(posedge clk); #TestTime;
-      if (READYN !== 1'b1)         reset_ok = 1'b0;   // not-ready on reset
-      if (PSOUT  !== 24'h0)        reset_ok = 1'b0;   // psum register cleared
-      if ({RES_OUT,SOUT} !== 4'h0) reset_ok = 1'b0;   // quant output cleared
-      if (Q !== '0)                reset_ok = 1'b0;   // kernel readback cleared
+      if (READYN !== 1'b1)                       reset_ok = 1'b0;   // not-ready on reset
+      if (PSOUT  !== 24'h0)                      reset_ok = 1'b0;   // psum register cleared
+      if ({i_dut.RES_OUT,i_dut.SOUT} !== 4'h0)   reset_ok = 1'b0;   // quant output cleared
+      if (i_dut.Q !== '0)                         reset_ok = 1'b0;   // kernel readback cleared
 
       // Check DIMC 1 via sel mux
       sel = 1'b1;
       @(posedge clk); #TestTime;
-      if (READYN !== 1'b1)         reset_ok = 1'b0;
-      if (PSOUT  !== 24'h0)        reset_ok = 1'b0;
-      if ({RES_OUT,SOUT} !== 4'h0) reset_ok = 1'b0;
-      if (Q !== '0)                reset_ok = 1'b0;
+      if (READYN !== 1'b1)                       reset_ok = 1'b0;
+      if (PSOUT  !== 24'h0)                      reset_ok = 1'b0;
+      if ({i_dut.RES_OUT,i_dut.SOUT} !== 4'h0)   reset_ok = 1'b0;
+      if (i_dut.Q !== '0)                         reset_ok = 1'b0;
       sel = 1'b0;   // return to default
 
       // Check internal feature buffers of both macros via hierarchical reference
@@ -410,9 +441,7 @@ module tb_DIMC_dual;
     // =======================================================================
     $display("[TB] Test 1: Kernel write DIMC 0");
     sel = 1'b0;   // target DIMC 0
-    for (int r = 0; r < NB_KERNEL_ROWS; r++)
-      for (int s = 0; s < 4; s++)
-        write_kernel_dual(5'(r), 2'(s), kernel_stim[r*4 + s]);
+    write_full_kernel_dual(kernel_stim);
     $display("[TB] Test 1: DONE (verified in Test 3)");
 `endif // TB_DUAL_TEST1
 
@@ -422,9 +451,7 @@ module tb_DIMC_dual;
     // =======================================================================
     $display("[TB] Test 2: Kernel write DIMC 1");
     sel = 1'b1;   // target DIMC 1
-    for (int r = 0; r < NB_KERNEL_ROWS; r++)
-      for (int s = 0; s < 4; s++)
-        write_kernel_dual(5'(r), 2'(s), kernel_stim[r*4 + s]);
+    write_full_kernel_dual(kernel_stim);
     $display("[TB] Test 2: DONE (verified in Test 4)");
 `endif // TB_DUAL_TEST2
 
@@ -838,9 +865,7 @@ module tb_DIMC_dual;
       out_pop = 1'b0;
 
       // Reload kernel and feature into DIMC 0
-      for (int r = 0; r < NB_KERNEL_ROWS; r++)
-        for (int s = 0; s < 4; s++)
-          write_kernel_dual(5'(r), 2'(s), kernel_stim[r*4 + s]);
+      write_full_kernel_dual(kernel_stim);
       load_feature_dual(feature_stim[0], feature_stim[1], feature_stim[2], feature_stim[3]);
 
       begin
