@@ -144,12 +144,23 @@ def main():
                 f.write(section_to_hex(section) + "\n")
 
     # =========================================================================
-    # FILE 2: feature_vector.txt  
+    # FILE 2: feature_vector.txt for 1 full feature vector 
     # =========================================================================
     with open(os.path.join(args.outdir, "feature_vector.txt"), "w") as f:
         for s in range(NUM_SECTIONS):
             section = feature[s * BYTES_PER_SECTION : (s + 1) * BYTES_PER_SECTION]
             f.write(section_to_hex(section) + "\n")
+
+
+    # =========================================================================
+    # FILE 3: feature_vector_8times.txt for 8 different feature vectors
+    # =========================================================================
+    features_8 = np.random.randint(0, 256, size=(8, BYTES_PER_ROW), dtype=np.uint8)
+    with open(os.path.join(args.outdir, "feature_vector_8times.txt"), "w") as f:
+        for p in range(8):
+            for s in range(NUM_SECTIONS):
+                section = features_8[p, s * BYTES_PER_SECTION : (s + 1) * BYTES_PER_SECTION]
+                f.write(section_to_hex(section) + "\n")
 
     # =========================================================================
     # PRE-COMPUTE MAC VALUES (MCT=0, all 128 elements active)
@@ -161,15 +172,35 @@ def main():
     psum_full = [(mac + BIAS) & 0xFFFFFF for mac in mac_full]
 
     # =========================================================================
-    # FILE 3: golden_matvec_4bit.txt
+    # FILE 4: golden_matvec_4bit.txt
     # =========================================================================
     golden_matvec = [relu_quant_with_bias(mac, BIAS) for mac in mac_full]
     write_golden(os.path.join(args.outdir, "golden_4bit.txt"), golden_matvec, width=8)
 
     # =========================================================================
-    # FILE 4: golden_psum_24bit.txt  (Test 3 expected 24-bit partial sums)
+    # FILE 5: golden_psum_24bit.txt  (Test 3 expected 24-bit partial sums)
     # =========================================================================
     write_golden(os.path.join(args.outdir, "golden_psum_24bit.txt"), psum_full, width=24)
+
+    # =========================================================================
+    # FILE 6: golden_output_cleopatra.txt
+    # =========================================================================
+    # cleopatra = spatz_DIMC_dual + accumulator. For feature vectors 1 through
+    # 3, compute the 32-row MatVec against the single kernel to get 32 psums
+    # per vector. Accumulate all 32*3 = 96 psums into a single running total.
+    acc_total = 0
+    for p in range(0, 8):
+        mac_p  = [compute_mac(kernel[r], features_8[p], mct=0) for r in range(NB_KERNEL_ROWS)]
+        psum_p = [(mac + BIAS) & 0xFFFFFF for mac in mac_p]
+        signed_psum_p = [ value if value < 0x800000 else value - 0x1000000 for value in psum_p]
+        print(f"\npsum_p (p={p}):\n {[f'{v:06x}' for v in psum_p]}\n")
+
+        acc_total += sum(signed_psum_p)
+        
+        print(f"acc_total (after p={p}):\n {acc_total & 0xFFFFFF:06x}\n")
+    acc_total &= 0xFFFFFFFF
+    write_golden(os.path.join(args.outdir, "golden_output_cleopatra.txt"), [acc_total], width=32)
+
 
     # =========================================================================
     # PRE-COMPUTE MAC VALUES FOR MCT SWEEP (row 0 only, 6 MCT values)
@@ -180,13 +211,13 @@ def main():
     psum_mct = [(mac + BIAS) & 0xFFFFFF for mac in mac_mct]
 
     # =========================================================================
-    # FILE 5: golden_mct_4bit.txt  (Test 4 expected 4-bit outputs)
+    # FILE 7: golden_mct_4bit.txt  (Test 4 expected 4-bit outputs)
     # =========================================================================
     golden_mct = [relu_quant_with_bias(mac, BIAS) for mac in mac_mct]
     write_golden(os.path.join(args.outdir, "golden_mct_4bit.txt"), golden_mct, width=8)
 
     # =========================================================================
-    # FILE 6: golden_psum_mct_24bit.txt  (Test 4 expected 24-bit partial sums)
+    # FILE 8: golden_psum_mct_24bit.txt  (Test 4 expected 24-bit partial sums)
     # =========================================================================
     write_golden(os.path.join(args.outdir, "golden_psum_mct_24bit.txt"), psum_mct, width=24)
 

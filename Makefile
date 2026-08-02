@@ -14,7 +14,7 @@ BENDER_VERSION := 0.31.0
 BENDER         := $(SIM_DIR)/bender
 
 # ── Default target ────────────────────────────────────────────
-.PHONY: hw-all stim update-ips hw-compile sim-dual sim-single sim-datapath hw-clean
+.PHONY: hw-all stim update-ips hw-compile sim-dual sim-single sim-datapath sim-cleopatra hw-clean
 
 hw-all: stim hw-compile
 
@@ -73,6 +73,9 @@ sim-single: stim hw-compile
 
 sim-datapath: stim hw-compile
 	vsim $(VSIM_FLAGS) -l $(SIM_DIR)/transcript -lib $(WORK_DIR) tb_dimc_datapath -do $(VSIM_DO)
+
+sim-cleopatra: stim hw-compile
+	vsim $(VSIM_FLAGS) -l $(SIM_DIR)/transcript -lib $(WORK_DIR) tb_cleopatra -do $(VSIM_DO)
 
 # ── Remove all generated artefacts ────────────────────────────
 hw-clean:

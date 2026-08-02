@@ -23,6 +23,8 @@ package dimc_package;
   parameter int unsigned KERNEL_STREAM_IDX = 1;
   parameter int unsigned OUTPUT_STREAM_IDX = 2;
 
+  parameter int unsigned NB_KERNEL_ROWS = 32; // kernel rows per DIMC macro (fixed: RA/WA are hardcoded 7 bits = 5-bit row + 2-bit section)
+
   typedef struct packed {
     logic unsigned [31:0] input_addr;     // memory address of input feature data
     logic unsigned [31:0] kernel_addr;    // memory address of kernel (weight) data

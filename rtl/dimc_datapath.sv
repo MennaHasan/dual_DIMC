@@ -2,9 +2,9 @@
  * dimc_datapath.sv
  */
 module dimc_datapath
+  import dimc_package::*;
 #(
   parameter int unsigned SECTION_WIDTH  = 256, // width of one DIMC memory/compute section (must stay 256: spatz_DIMC hardcodes FA/RA/WA bit widths assuming 1024/SECTION_WIDTH == 4 sections per row)
-  parameter int unsigned NB_KERNEL_ROWS = 32,  // kernel rows per macro (must stay 32: RA/WA are hardcoded 7 bits = 5-bit row + 2-bit section)
   parameter int unsigned INP_FIFO_DEPTH = 8,
   parameter int unsigned WGT_FIFO_DEPTH = 128,
   parameter int unsigned OUT_FIFO_DEPTH = 64
@@ -47,11 +47,10 @@ module dimc_datapath
   logic [SECTION_WIDTH-1:0]  wgt_data;
 
   logic                      out_pop, out_full, out_empty;
-  logic [31:0]               out_data; // already sign-extended to 32 bits by spatz_DIMC_dual
+  logic [23:0]               out_data;
 
   spatz_DIMC_dual #(
     .SECTION_WIDTH  ( SECTION_WIDTH  ),
-    .NB_KERNEL_ROWS ( NB_KERNEL_ROWS ),
     .INP_FIFO_DEPTH ( INP_FIFO_DEPTH ),
     .WGT_FIFO_DEPTH ( WGT_FIFO_DEPTH ),
     .OUT_FIFO_DEPTH ( OUT_FIFO_DEPTH )
@@ -105,12 +104,10 @@ module dimc_datapath
   assign kernel_i.ready = ~wgt_full;
 
   // output store: present a result whenever out_fifo is non-empty; pop it
-  // only once the streamer's Y/output sink actually accepts it. out_data is
-  // already a sign-extended 32-bit value (spatz_DIMC_dual does that), so
-  // this only has to zero-pad it up to the SECTION_WIDTH-wide output word.
+  // only once the streamer's Y/output sink actually accepts it.
   assign output_o.valid = ~out_empty;
   assign out_pop         = output_o.valid & output_o.ready;
-  assign output_o.data   = { {(SECTION_WIDTH-32){1'b0}}, out_data };
+  assign output_o.data   = { {(SECTION_WIDTH-24){out_data[23]}}, out_data };
   assign output_o.strb   = '1;
 
   // =========================================================================

@@ -48,6 +48,14 @@ packages:
     - l2_tcdm_hybrid_interco
     - redundancy_cells
     - register_interface
+  hwpe-ctrl:
+    revision: c255e21877efcd24488391470b9180d99a94eb25
+    version: 3.0.2
+    source:
+      Git: https://github.com/pulp-platform/hwpe-ctrl.git
+    dependencies:
+    - common_cells
+    - tech_cells_generic
   hwpe-stream:
     revision: 05cb8303693065812e9d6bfe10976220fb455666
     version: 1.10.0

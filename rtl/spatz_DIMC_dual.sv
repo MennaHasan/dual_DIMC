@@ -37,8 +37,6 @@
 module spatz_DIMC_dual #(
     // Width of each 256-bit SRAM section (must match spatz_DIMC parameter).
     parameter int SECTION_WIDTH  = 256,
-    // Number of kernel rows in each DIMC (32 rows × 128 bytes = 4096 bytes).
-    parameter int NB_KERNEL_ROWS = 32,
     // FIFO depths in number of SECTION_WIDTH-bit entries:
     parameter int INP_FIFO_DEPTH = 8,    // input feature FIFO:  2 complete feature vectors (2 × 4 = 8)
     parameter int WGT_FIFO_DEPTH = 128,  // weight FIFO:         1 complete kernel (32 rows × 4 sections)
@@ -84,7 +82,7 @@ module spatz_DIMC_dual #(
 
     // Output FIFO
     input  logic                     out_pop,
-    output logic [31:0]              out_data, // PSOUT, sign-extended to 32 bits
+    output logic [23:0]              out_data,
     output logic                     out_full,
     output logic                     out_empty
 );
@@ -141,11 +139,11 @@ module spatz_DIMC_dual #(
     // Output FIFO
     // =========================================================================
     logic        out_push;
-    logic [31:0] out_wdata;
+    logic [23:0] out_wdata;
 
     fifo_v3 #(
         .FALL_THROUGH (1'b0),
-        .DATA_WIDTH   (32),
+        .DATA_WIDTH   (24),
         .DEPTH        (OUT_FIFO_DEPTH)
     ) u_out_fifo (
         .clk_i      (clk),
@@ -307,7 +305,7 @@ module spatz_DIMC_dual #(
         wgt_pop  = ~WCSN & ~WEN & ~wgt_empty;
         inp_pop  = ~FCSN & ~inp_empty;
         out_push  = ~READYN & ~out_full;
-        out_wdata = { {8{PSOUT[23]}}, PSOUT }; // sign-extend 24-bit PSOUT to 32 bits
+        out_wdata = PSOUT;
     end
 
 endmodule

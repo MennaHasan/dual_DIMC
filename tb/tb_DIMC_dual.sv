@@ -46,7 +46,7 @@
 // ── Test enable macros ────────────────────────────────────────────────────
 // Comment out a line to skip that test at compile time.
 
-
+/*
 `define TB_DUAL_TEST0    // Reset verification
 `define TB_DUAL_TEST1    // Kernel write DIMC 0
 `define TB_DUAL_TEST5    // Feature load DIMC 0 + dot product row 1 (requires Tests 1 and 3)
@@ -62,26 +62,22 @@
 `define TB_DUAL_TEST11   // MCT sweep DIMC 1 (requires Tests 2 and 6)
 `define TB_DUAL_TEST12   // MCT sweep DIMC 0 (requires Tests 1 and 5)
 `define TB_DUAL_TEST13   // Overlapping computes DIMC0 row 5 / DIMC1 row 7
-
-
-
-
-
 `define TB_DUAL_TEST14   // Pipelined MatVec DIMC 0, single-phase
+*/
+`define TB_DUAL_TEST15   // Pipelined MatVec DIMC 0, single-phase
+
 // ─────────────────────────────────────────────────────────────────────────
 
 `timescale 1ns/1ps
 
 module tb_DIMC_dual;
+  import dimc_package::*;
 
   // -------------------------------------------------------------------------
   // Parameters
   // -------------------------------------------------------------------------
   // SECTION_WIDTH: each DIMC memory section is 256 bits = 32 bytes.
   parameter SECTION_WIDTH  = 256;
-  // NB_KERNEL_ROWS: each DIMC has 32 kernel rows (32 × 128 uint8 elements).
-  parameter NB_KERNEL_ROWS = 32;
-
   parameter KERNEL_WEIGHTS_FILE         = "stimuli/kernel_weights.txt";
   parameter FEATURE_VECTOR_FILE         = "stimuli/feature_vector.txt";
   parameter GOLDEN_MATVEC_FILE          = "stimuli/golden_4bit.txt";
@@ -173,8 +169,7 @@ module tb_DIMC_dual;
   // DUT INSTANTIATION
   // =========================================================================
   spatz_DIMC_dual #(
-    .SECTION_WIDTH  (SECTION_WIDTH),
-    .NB_KERNEL_ROWS (NB_KERNEL_ROWS)
+    .SECTION_WIDTH  (SECTION_WIDTH)
   ) i_dut (
     .clk      (clk),
     .rst_n    (rst_n),
@@ -521,12 +516,13 @@ module tb_DIMC_dual;
       // Without this wait, out_empty may still be high immediately after the task returns.
       @(posedge clk); #ApplTime;
       if (out_empty) begin
-        $error("[TB] Test5: out_fifo empty — push did not fire"); test_fail++;
+        $error("[TB] Test5: out_fifo empty AND push did not fire"); test_fail++;
       end else if (out_data !== golden_psout[1]) begin
         $error("[TB] Test5: out_fifo got 0x%06h, expected 0x%06h", out_data, golden_psout[1]); test_fail++;
-      end
-      // Pop to clear the result from the FIFO
-      out_pop = 1'b1; @(posedge clk); #ApplTime; out_pop = 1'b0;
+      end else begin
+        // Pop to clear the result from the FIFO
+        out_pop = 1'b1; @(posedge clk); #ApplTime; out_pop = 1'b0;
+      end 
       if (test_fail == 0) begin $display("[TB] Test 5: PASS"); pass_count++; end
       else                begin $display("[TB] Test 5: FAIL"); fail_count++; end
     end
@@ -846,17 +842,13 @@ module tb_DIMC_dual;
 
 
 `ifdef TB_DUAL_TEST14
-    // =======================================================================
-    // TEST 14: PIPELINED MATRIX-VECTOR MULTIPLICATION — DIMC 0, SINGLE PHASE
-    // =======================================================================
-    // Phase 1: fire all 32 row triggers back-to-back (fully pipelined).
-    // Phase 2: wait for the pipeline to drain, then pop and verify all 32
-    //          results from out_fifo against golden_psout.
-    // =======================================================================
+    // ===============================================================================
+    // TEST 14: PIPELINED MATRIX-VECTOR MULTIPLICATION — DIMC 0 - POP all at the end
+    // ===============================================================================
     $display("[TB] Test 14: Pipelined MatVec DIMC 0, single phase");
     begin
       automatic int test_fail = 0;
-      sel = 1'b1;
+      sel = 1'b0;
 
       // Drain any stale entries from previous tests
       while (!out_empty) begin
@@ -869,57 +861,160 @@ module tb_DIMC_dual;
       load_feature_dual(feature_stim[0], feature_stim[1], feature_stim[2], feature_stim[3]);
 
       begin
-        automatic int fd = $fopen("debug/test14_fifo_dump.txt", "w");
+        automatic int fd;
 
-
-        @(posedge clk); #ApplTime;      // N
-      // request for dot product of row i happen here @ N
-          COMPE = 1'b1; MODE = 2'b11; MCT = 8'd0;
-          RA    = {5'(0), 2'b00}; ADDIN = BIAS;
-          RCSN  = 1'b0; RCSN0 = 1'b0; RCSN1 = 1'b0; RCSN2 = 1'b0; RCSN3 = 1'b0;
-          WCSN  = 1'b1; WEN   = 1'b1; FCSN  = 1'b1;
-        @(posedge clk);                 // N+1
-        @(posedge clk); #ApplTime;      // N+2
-        
-        $fdisplay(fd, "clk cycle N+%0d out_data=%06h  out_empty=%0b  READYN=%0b  PSOUT=%06h", 2, out_data, out_empty, READYN, PSOUT);
-        for (int i = 1; i < NB_KERNEL_ROWS+3; i++) begin
-          // request for dot product of row i happen here @ N+1+i
-          // request for dot product of row 1 happen here @ N+2
-
+        for (int i = 0; i < 32; i++) begin
           if (i < NB_KERNEL_ROWS) begin
-          COMPE = 1'b1; MODE = 2'b11; MCT = 8'd0;
-          RA    = {5'(i), 2'b00}; ADDIN = BIAS;
-          RCSN  = 1'b0; RCSN0 = 1'b0; RCSN1 = 1'b0; RCSN2 = 1'b0; RCSN3 = 1'b0;
-          WCSN  = 1'b1; WEN   = 1'b1; FCSN  = 1'b1;
-          
+            COMPE = 1'b1; MODE = 2'b11; MCT = 8'd0;
+            RA    = {5'(i), 2'b00}; ADDIN = BIAS;
+            RCSN  = 1'b0; RCSN0 = 1'b0; RCSN1 = 1'b0; RCSN2 = 1'b0; RCSN3 = 1'b0;
+            WCSN  = 1'b1; WEN   = 1'b1; FCSN  = 1'b1;
+            
+          end else begin
+          // COMPE/RCSN* deasserted after last row
+            COMPE = 1'b0;
+            RCSN  = 1'b1; RCSN0 = 1'b1; RCSN1 = 1'b1; RCSN2 = 1'b1; RCSN3 = 1'b1;
           end
-          @(posedge clk); #TestTime;// @ i=1 ---> N+i+2
+          @(posedge clk); #ApplTime;
+        end
 
-          // for debugging
-          $fdisplay(fd, "clk cycle N+%0d out_data=%06h  out_empty=%0b  READYN=%0b  PSOUT=%06h", i+2, out_data, out_empty, READYN, PSOUT);
-          if (i >= 3) begin   // @ N+5 till N+36
-            if (out_data !== golden_psout[i-3]) begin
-              $error("[TB] Test14 DIMC0 row%0d: out_fifo got 0x%06h, expected 0x%06h",
-                     i-3, out_data, golden_psout[i-3]);
-              test_fail++;
+        // Test -------------------------
+        if (out_data != golden_psout[0]) begin
+            test_fail = 1;
+        end
+        out_pop = 1'b1;
+          for (int i = 1; i < 32; i++) begin
+            @(posedge clk); #TestTime;
+            if (out_data != golden_psout[i]) begin
+              test_fail = 1;
             end
           end
-          if (i == 3) begin     // @ N+5
-            out_pop = 1'b1;
-            $fdisplay(fd, "out pop now = 1");   // for debugging
-          end
-          
-        end
         out_pop = 1'b0;
+        
+
+
+        /* for debugging -------------------------
+        fd = $fopen("debug/test14_fifo_dump.txt", "w");
+        if (fd == 0)
+          $fatal(1, "[TB] Could not open debug/test14_fifo_dump.txt");
+
+        $fdisplay(fd, "i= %d out_data=%06h", 0, out_data);
+        out_pop = 1'b1;
+          for (int i = 1; i < 32; i++) begin
+            @(posedge clk); #TestTime;
+            $fdisplay(fd, "i= %d out_data=%06h", i, out_data);
+          end
+        out_pop = 1'b0;
+        
         $fclose(fd);
-        // for debugging
         $display("[TB] Test 14: FIFO dump written to debug/test14_fifo_dump.txt");
+        */
       end
 
       if (test_fail == 0) begin $display("[TB] Test 14: PASS"); pass_count++; end
       else                begin $display("[TB] Test 14: FAIL (%0d mismatches)", test_fail); fail_count++; end
     end
 `endif // TB_DUAL_TEST14
+
+
+
+`ifdef TB_DUAL_TEST15
+    // ===============================================================================
+    // TEST 15: PIPELINED MATRIX-VECTOR MULTIPLICATION — DIMC 0 - POP once ready
+    // ===============================================================================
+    $display("[TB] Test 15: Pipelined MatVec DIMC 0, single phase, pop once ready");
+    begin
+      automatic int test_fail = 0;
+      automatic int count_correct = 0;
+      sel = 1'b0;
+
+      // Drain any stale entries from previous tests
+      while (!out_empty) begin
+        out_pop = 1'b1; @(posedge clk); #ApplTime;
+      end
+      out_pop = 1'b0;
+
+      // Reload kernel and feature into DIMC 0
+      write_full_kernel_dual(kernel_stim);
+      load_feature_dual(feature_stim[0], feature_stim[1], feature_stim[2], feature_stim[3]);
+
+      begin
+        automatic int fd;
+
+        for (int i = 0; i <= NB_KERNEL_ROWS + 4; i++) begin
+          if (i < NB_KERNEL_ROWS) begin
+            // requesting row i
+            COMPE = 1'b1; MODE = 2'b11; MCT = 8'd0;
+            RA    = {5'(i), 2'b00}; ADDIN = BIAS;
+            RCSN  = 1'b0; RCSN0 = 1'b0; RCSN1 = 1'b0; RCSN2 = 1'b0; RCSN3 = 1'b0;
+            WCSN  = 1'b1; WEN   = 1'b1; FCSN  = 1'b1;
+          end
+          
+          // checking correctness of data and popping starting from cycle N + 5 
+          if (i==5) begin
+            // start popping results of the output FIFO
+            $display("out_data: %0d golden_psout[i-5]:",out_data, golden_psout[i-5]);
+            
+            if (out_data != golden_psout[i-5]) begin
+              test_fail = 1;
+            end else 
+              count_correct ++;
+            end
+
+            out_pop = 1'b1;
+
+          if (i > 5) begin
+            // popping results of the output FIFO
+            $display("out_data: %0d golden_psout[i-5]:",out_data, golden_psout[i-5]);
+            if (out_data != golden_psout[i-5]) begin
+              test_fail = 1;
+            end else 
+              count_correct ++;
+            end
+            
+
+
+          else if (i == NB_KERNEL_ROWS) begin
+          // COMPE/RCSN* deasserted after last row
+            COMPE = 1'b0;
+            RCSN  = 1'b1; RCSN0 = 1'b1; RCSN1 = 1'b1; RCSN2 = 1'b1; RCSN3 = 1'b1;
+          
+          end else if (i == NB_KERNEL_ROWS + 5) begin
+            // stop popping results of the output FIFO
+            out_pop = 1'b0;
+          end
+
+          $display("correct answers count = %d", count_correct);
+          @(posedge clk); #ApplTime;
+
+        end
+
+        
+        
+
+
+        /* for debugging -------------------------
+        fd = $fopen("debug/test14_fifo_dump.txt", "w");
+        if (fd == 0)
+          $fatal(1, "[TB] Could not open debug/test14_fifo_dump.txt");
+
+        $fdisplay(fd, "i= %d out_data=%06h", 0, out_data);
+        out_pop = 1'b1;
+          for (int i = 1; i < 32; i++) begin
+            @(posedge clk); #TestTime;
+            $fdisplay(fd, "i= %d out_data=%06h", i, out_data);
+          end
+        out_pop = 1'b0;
+        
+        $fclose(fd);
+        $display("[TB] Test 15: FIFO dump written to debug/test14_fifo_dump.txt");
+        */
+      end
+
+      if (test_fail == 0) begin $display("[TB] Test 15: PASS"); pass_count++; end
+      else                begin $display("[TB] Test 15: FAIL (%0d mismatches)", test_fail); fail_count++; end
+    end
+`endif // TB_DUAL_TEST15
 
 
 

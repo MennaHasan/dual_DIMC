@@ -10,8 +10,7 @@ module dimc_top
   parameter int unsigned MP  = 3,         // number of TCDM master ports (one per data stream: input, kernel, output)
   parameter int unsigned ID  = 10,        
   
-  parameter int unsigned DATA_WIDTH = 256,     // bit-width of a single input/kernel/output section (must match spatz_DIMC_dual's SECTION_WIDTH)
-  parameter int unsigned NB_KERNEL_ROWS = 32   // kernel rows per DIMC macro (must match spatz_DIMC_dual's NB_KERNEL_ROWS)
+  parameter int unsigned DATA_WIDTH = 256      // bit-width of a single input/kernel/output section (must match spatz_DIMC_dual's SECTION_WIDTH)
 )
 (
   // global signals
@@ -36,8 +35,7 @@ module dimc_top
   hwpe_stream_intf_stream #( .DATA_WIDTH( DATA_WIDTH ) )         output_stream        ( .clk ( clk_i ) );
 
   dimc_datapath #(
-    .SECTION_WIDTH  ( DATA_WIDTH      ),
-    .NB_KERNEL_ROWS ( NB_KERNEL_ROWS  )
+    .SECTION_WIDTH  ( DATA_WIDTH      )
   ) i_datapath (
     .clk_i    ( clk_i         ),
     .rst_ni   ( rst_ni        ),
@@ -68,7 +66,6 @@ module dimc_top
   dimc_ctrl #(
     .N_CORES        ( 2               ),
     .N_CONTEXT      ( 2               ),
-    .NB_KERNEL_ROWS ( NB_KERNEL_ROWS  ),
     .ID             ( ID              )
   ) i_ctrl (
     .clk_i              ( clk_i            ),

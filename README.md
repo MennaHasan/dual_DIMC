@@ -8,17 +8,18 @@ module load questasim
 
 2. comment or uncomment test defines to select comiled tests
 
-3. compile and simulate
+3. compile modules and testbenches
 make hw-clean
 make hw-all
 make sim-single
 make sim-dual
+make sim-cleopatra
 
 4. To use GUI 
 make sim-single GUI=1
 make sim-dual GUI=1
 
-5. Adding signals innside Questasim 
+5. Adding signals innside Questasim (for sim-dual)
 restart -f
 env tb_DIMC_dual
 add wave clk COMPE RCSN READYN PSOUT SOUT RES_OUT out_data out_empty out_pop

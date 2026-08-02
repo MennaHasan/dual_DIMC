@@ -5,7 +5,8 @@
     module spatz_DIMC #(
     
  	    //Parameter for Section Width
-    parameter SECTION_WIDTH = 256   // can be 256, 512, or 1024
+    parameter SECTION_WIDTH = 256,  // can be 256, 512, or 1024
+    parameter bit DEBUG_PIPELINE = 1'b1
 )(
 
     // System Interface
@@ -128,7 +129,7 @@ always_comb begin
     case (pipeline_mode[1])
         // 1-bit Mode: XNOR + Popcount
         2'b00: begin
-            xnor_result = ~(masked_kernel ^ masked_feature);
+            xnor_result = ~(pipeline_kernel[1] ^ pipeline_feature[1]);
             popcount = $countones(xnor_result);
             comp_result = popcount;
         end
@@ -136,8 +137,8 @@ always_comb begin
         // 2-bit Mode: Vector multiplication
         2'b01: begin
             for (int i = 0; i < 512; i++) begin
-                k_val2b = masked_kernel[i*2 +: 2];
-                f_val2b = masked_feature[i*2 +: 2];
+                k_val2b = pipeline_kernel[1][i*2 +: 2];
+                f_val2b = pipeline_feature[1][i*2 +: 2];
                 comp_result += k_val2b * f_val2b;
             end
         end
@@ -145,8 +146,8 @@ always_comb begin
         // 4-bit Mode: Vector multiplication
         2'b10: begin
             for (int i = 0; i < 256; i++) begin
-                k_val4b = masked_kernel[i*4 +: 4];
-                f_val4b = masked_feature[i*4 +: 4];
+                k_val4b = pipeline_kernel[1][i*4 +: 4];
+                f_val4b = pipeline_feature[1][i*4 +: 4];
                 comp_result += k_val4b * f_val4b;
             end
         end
@@ -154,8 +155,8 @@ always_comb begin
         // Default: 8-bit Mode (vector multiplication)
         default: begin
              for (int i = 0; i < ROW_WIDTH/8; i++) begin
-                 k_val8b = masked_kernel[i*8 +: 8];
-                 f_val8b = masked_feature[i*8 +: 8];
+                 k_val8b = pipeline_kernel[1][i*8 +: 8];
+                 f_val8b = pipeline_feature[1][i*8 +: 8];
                  comp_result += k_val8b * f_val8b;
              end
          end

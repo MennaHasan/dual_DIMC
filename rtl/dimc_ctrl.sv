@@ -8,7 +8,6 @@ module dimc_ctrl
 #(
   parameter int unsigned N_CORES        = 2,  // number of CPU cores allowed to program/start this HWPE
   parameter int unsigned N_CONTEXT      = 2,  // number of job "contexts" the register file can hold (double-buffering: one running + one queued)
-  parameter int unsigned NB_KERNEL_ROWS = 32, // kernel rows per job (must match dimc_top/dimc_datapath's NB_KERNEL_ROWS)
   parameter int unsigned ID             = 10  // ID width for outstanding memory transactions
 )
 (
@@ -31,10 +30,7 @@ module dimc_ctrl
   hwpe_ctrl_package::flags_slave_t  slave_flags;
   hwpe_ctrl_package::ctrl_regfile_t reg_file;
 
-  // NUM_SECTIONS: 256-bit sections per kernel row / feature vector (=4,
-  // matches dimc_datapath's own localparam of the same name -- both are
-  // derived from the same fixed 1024-bit row/vector width).
-  localparam int unsigned NUM_SECTIONS       = 4;
+  localparam int unsigned NUM_SECTIONS       = 4;   //256-bit sections per kernel row 
   localparam int unsigned NB_KERNEL_SECTIONS = NB_KERNEL_ROWS * NUM_SECTIONS;
 
   dimc_config_t config_;
@@ -57,7 +53,7 @@ module dimc_ctrl
     .reg_file ( reg_file    )
   );
   
-   assign slave_ctrl.done = (state_d == FSM_IDLE && state_q == FSM_COMPUTE) ? 1'b1 : 1'b0;
+  assign slave_ctrl.done = (state_d == FSM_IDLE && state_q == FSM_COMPUTE) ? 1'b1 : 1'b0;
   assign slave_ctrl.evt  = (state_d == FSM_IDLE && state_q == FSM_COMPUTE) ? 1'b1 : 1'b0;
   assign slave_ctrl.ext_flags = '0;
   assign evt_o = slave_flags.evt;
