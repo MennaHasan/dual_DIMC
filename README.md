@@ -31,6 +31,7 @@ restart -f
 env tb_cleopatra
 add wave clk COMPE acc_clear_i acc_o
 add wave sim:/tb_cleopatra/i_dut/READYN
+add wave sim:/tb_cleopatra/i_dut/out_data
 
 6. run simulation in Questasim
 run -all

@@ -25,6 +25,7 @@ o-quiet -auto_acc_if_foreign -work sim/work +acc
 Z2 tCvgOpt 0
 n@_opt
 OL;O;2024.3;79
+R1
 vaccumulator
 Z3 2/srv/home/mennatalla.hassan/dual_DIMC/rtl/spatz_DIMC.sv|/srv/home/mennatalla.hassan/dual_DIMC/rtl/spatz_DIMC_dual.sv|/srv/home/mennatalla.hassan/dual_DIMC/rtl/dimc_package.sv|/srv/home/mennatalla.hassan/dual_DIMC/rtl/dimc_datapath.sv|/srv/home/mennatalla.hassan/dual_DIMC/rtl/dimc_streamer.sv|/srv/home/mennatalla.hassan/dual_DIMC/rtl/dimc_ctrl.sv|/srv/home/mennatalla.hassan/dual_DIMC/rtl/dimc_top.sv|/srv/home/mennatalla.hassan/dual_DIMC/rtl/accumulator.sv|/srv/home/mennatalla.hassan/dual_DIMC/rtl/cleopatra_ctrl.sv|/srv/home/mennatalla.hassan/dual_DIMC/rtl/cleopatra.sv
 Z4 !s10a 1785924666
@@ -11191,7 +11192,7 @@ vmem_to_banks
 R62
 R5
 R63
-!s110 1785944543
+!s110 1785945274
 !i10b 1
 !s100 BUIc4i[Ne9MH=VeUFN@l`1
 I<kW`fnUQESdAcQ56B=<mY2
@@ -11200,14 +11201,14 @@ R1
 R18
 R136
 R137
-!i122 30
+!i122 32
 L0 563 196
 R8
 R9
 r1
 !s85 0
 31
-!s108 1785944543.000000
+!s108 1785945274.000000
 R66
 R67
 !i113 0
