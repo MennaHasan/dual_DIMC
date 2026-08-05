@@ -2,11 +2,9 @@
 
 `timescale 1ns/1ps
 
-    module spatz_DIMC #(
-    
- 	    //Parameter for Section Width
-    parameter SECTION_WIDTH = 256,  // can be 256, 512, or 1024
-    parameter bit DEBUG_PIPELINE = 1'b1
+module spatz_DIMC  #(
+ 	// Parameter for Section Width
+    parameter SECTION_WIDTH = 256   // can be 256, 512, or 1024
 )(
 
     // System Interface
@@ -155,6 +153,8 @@ always_comb begin
         // Default: 8-bit Mode (vector multiplication)
         default: begin
              for (int i = 0; i < ROW_WIDTH/8; i++) begin
+                // masked_kernel might have already changed
+                // this step is part of stage 1 of pipeline not 0 !
                  k_val8b = pipeline_kernel[1][i*8 +: 8];
                  f_val8b = pipeline_feature[1][i*8 +: 8];
                  comp_result += k_val8b * f_val8b;
