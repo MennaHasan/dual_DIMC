@@ -120,26 +120,27 @@ module tb_cleopatra;
     .acc_o        (acc_o)
   );
 
-  // CLOCK GENERATION AND RESET
+  // CLOCK GENERATION
   initial begin
-    clk   = 1'b0;
+    clk = 1'b0;
+    forever #(ClkPeriod/2) clk = ~clk;
+  end
+
+  // RESET GENERATION
+  initial begin
     rst_n = 1'b0;
-    repeat (3) begin
-      #(ClkPeriod/2) clk = 1'b0;
-      #(ClkPeriod/2) clk = 1'b1;
-    end
+    repeat (3) @(posedge clk);
+    #ApplTime;
     rst_n = 1'b1;
-    forever begin
-      #(ClkPeriod/2) clk = 1'b0;
-      #(ClkPeriod/2) clk = 1'b1;
-    end
   end
 
   task automatic clear_accumulators();
-    @(negedge clk);
+    @(posedge clk);
+    #ApplTime;
     acc_clear_i = 1'b1;
 
-    @(negedge clk);
+    @(posedge clk);
+    #ApplTime;
     acc_clear_i = 1'b0;
   endtask
 
