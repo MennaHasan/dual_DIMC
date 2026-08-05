@@ -45,12 +45,11 @@ module cleopatra #(
     input  logic [SECTION_WIDTH-1:0] wgt_data,
 
     // accumulator control
-    input  logic                        acc_enable_i,
     input  logic                        acc_clear_i,
-    output logic signed [OUT_WIDTH-1:0] acc_o
+    output logic [OUT_WIDTH-1:0]        acc_o [0:255]
 );
 
-    // dimc_dual status/handshake signals -- internal only, not exposed as ports
+    // dimc_dual status/handshake signals
     logic                     READYN;
     logic [23:0]              PSOUT;
     logic                     inp_full, inp_empty;
@@ -60,14 +59,21 @@ module cleopatra #(
     logic out_pop, out_full, out_empty;
     assign out_pop = ~out_empty;
 
-    // Accumulate exactly once per popped result. acc_enable_i can't be
-    // pulsed correctly from outside cleopatra since out_pop/out_empty aren't
-    // ports -- it's ANDed in here as a global enable/disable instead.
-    logic acc_enable;
-    assign acc_enable = out_pop & acc_enable_i;
+    // Accumulate exactly once per popped result. Each accumulator uses its
+    // own enable bit, gated by the local out_pop handshake.
+    logic [255:0] acc_sel;
 
-    // dimc_dual output stream -> accumulator input (internal, not exposed)
-    logic signed [23:0] out_data;
+    cleopatra_ctrl #(
+        .WIDTH (256)
+    ) u_ctrl (
+        .clk      (clk   ),
+        .rst_n    (rst_n ),
+        .out_pop  (out_pop),
+        .acc_sel_o(acc_sel)
+    );
+
+    // dimc_dual output stream -> accumulator input 
+    logic [23:0] out_data;
 
     spatz_DIMC_dual #(
         .SECTION_WIDTH  (SECTION_WIDTH ),
@@ -110,16 +116,33 @@ module cleopatra #(
         .out_empty (out_empty)
     );
 
-    accumulator #(
-        .DATA_WIDTH (DATA_WIDTH),
-        .OUT_WIDTH  (OUT_WIDTH )
-    ) u_accumulator (
-        .clk_i    (clk         ),
-        .rst_ni   (rst_n       ),
-        .enable_i (acc_enable   ),
-        .clear_i  (acc_clear_i ),
-        .data_i   (out_data    ),
-        .acc_o    (acc_o       )
-    );
+/* for debugging 
+    always_ff @(posedge clk) begin
+        if (!rst_n) begin
+            // reset behavior, no debug output
+        end else if (~out_empty) begin
+            $display("[CLEO] time=%0t out_empty=%b out_data=%0h", $time, out_empty, out_data);
+        end
+    end
+*/
+    genvar i;
+    generate
+        for (i = 0; i < 256; i++) begin : gen_accumulators
+            logic acc_enable;
+            assign acc_enable = out_pop & acc_sel[i];
+
+            accumulator #(
+                .DATA_WIDTH (DATA_WIDTH),
+                .OUT_WIDTH  (OUT_WIDTH )
+            ) u_accumulator (
+                .clk_i    (clk         ),
+                .rst_ni   (rst_n       ),
+                .enable_i (acc_enable  ),
+                .clear_i  (acc_clear_i ),
+                .data_i   (out_data    ),
+                .acc_o    (acc_o[i]    )
+            );
+        end
+    endgenerate
 
 endmodule // cleopatra

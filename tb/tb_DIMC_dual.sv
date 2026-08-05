@@ -46,7 +46,7 @@
 // ── Test enable macros ────────────────────────────────────────────────────
 // Comment out a line to skip that test at compile time.
 
-/*
+
 `define TB_DUAL_TEST0    // Reset verification
 `define TB_DUAL_TEST1    // Kernel write DIMC 0
 `define TB_DUAL_TEST5    // Feature load DIMC 0 + dot product row 1 (requires Tests 1 and 3)
@@ -63,7 +63,7 @@
 `define TB_DUAL_TEST12   // MCT sweep DIMC 0 (requires Tests 1 and 5)
 `define TB_DUAL_TEST13   // Overlapping computes DIMC0 row 5 / DIMC1 row 7
 `define TB_DUAL_TEST14   // Pipelined MatVec DIMC 0, single-phase
-*/
+
 `define TB_DUAL_TEST15   // Pipelined MatVec DIMC 0, single-phase
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -88,9 +88,9 @@ module tb_DIMC_dual;
   // NB_MCT_VALS: number of distinct MCT values in the sweep test (Test 11-12).
   parameter NB_MCT_VALS = 6;
 
-  // BIAS: 24-bit signed constant bias added to every MAC result at Stage 3.
+  // BIAS: 24-bit unsigned two's-complement bias constant added to every MAC result at Stage 3.
   // Must match BIAS in gen_stim.py and tb_DIMC.sv.
-  localparam logic signed [23:0] BIAS = -2_080_000;
+  localparam logic [23:0] BIAS = 24'hE04300;
 
   // MCT_VALS: six threshold values, each trimming different numbers of active elements.
   // Must match MCT_VALS in gen_stim.py and tb_DIMC.sv.
@@ -863,7 +863,7 @@ module tb_DIMC_dual;
       begin
         automatic int fd;
 
-        for (int i = 0; i < 32; i++) begin
+        for (int i = 0; i <= 32; i++) begin
           if (i < NB_KERNEL_ROWS) begin
             COMPE = 1'b1; MODE = 2'b11; MCT = 8'd0;
             RA    = {5'(i), 2'b00}; ADDIN = BIAS;
@@ -871,7 +871,7 @@ module tb_DIMC_dual;
             WCSN  = 1'b1; WEN   = 1'b1; FCSN  = 1'b1;
             
           end else begin
-          // COMPE/RCSN* deasserted after last row
+            // COMPE/RCSN* deasserted after last row
             COMPE = 1'b0;
             RCSN  = 1'b1; RCSN0 = 1'b1; RCSN1 = 1'b1; RCSN2 = 1'b1; RCSN3 = 1'b1;
           end
@@ -941,50 +941,36 @@ module tb_DIMC_dual;
       begin
         automatic int fd;
 
-        for (int i = 0; i <= NB_KERNEL_ROWS + 4; i++) begin
+        for (int i = 0; i <= NB_KERNEL_ROWS + 5; i++) begin
           if (i < NB_KERNEL_ROWS) begin
             // requesting row i
             COMPE = 1'b1; MODE = 2'b11; MCT = 8'd0;
             RA    = {5'(i), 2'b00}; ADDIN = BIAS;
             RCSN  = 1'b0; RCSN0 = 1'b0; RCSN1 = 1'b0; RCSN2 = 1'b0; RCSN3 = 1'b0;
             WCSN  = 1'b1; WEN   = 1'b1; FCSN  = 1'b1;
-          end
-          
-          // checking correctness of data and popping starting from cycle N + 5 
-          if (i==5) begin
-            // start popping results of the output FIFO
-            $display("out_data: %0d golden_psout[i-5]:",out_data, golden_psout[i-5]);
-            
-            if (out_data != golden_psout[i-5]) begin
-              test_fail = 1;
-            end else 
-              count_correct ++;
-            end
-
-            out_pop = 1'b1;
-
-          if (i > 5) begin
-            // popping results of the output FIFO
-            $display("out_data: %0d golden_psout[i-5]:",out_data, golden_psout[i-5]);
-            if (out_data != golden_psout[i-5]) begin
-              test_fail = 1;
-            end else 
-              count_correct ++;
-            end
-            
-
-
-          else if (i == NB_KERNEL_ROWS) begin
-          // COMPE/RCSN* deasserted after last row
+          end else if (i == NB_KERNEL_ROWS) begin
+            // COMPE/RCSN* deasserted after last row
             COMPE = 1'b0;
             RCSN  = 1'b1; RCSN0 = 1'b1; RCSN1 = 1'b1; RCSN2 = 1'b1; RCSN3 = 1'b1;
-          
-          end else if (i == NB_KERNEL_ROWS + 5) begin
-            // stop popping results of the output FIFO
+          end
+
+          if (i >= 5 && i <= NB_KERNEL_ROWS + 4) begin
+            if (out_empty) begin
+              $error("[TB] Test 15: attempted pop when FIFO empty at cycle %0d", i);
+              test_fail = 1;
+              out_pop = 1'b0;
+            end else begin
+              out_pop = 1'b1;
+              if (out_data != golden_psout[i-5]) begin
+                test_fail = 1;
+              end else begin
+                count_correct ++;
+              end
+            end
+          end else begin
             out_pop = 1'b0;
           end
 
-          $display("correct answers count = %d", count_correct);
           @(posedge clk); #ApplTime;
 
         end
@@ -1049,5 +1035,4 @@ module tb_DIMC_dual;
     $error("[TB] WATCHDOG: simulation exceeded 100 us");
     $finish;
   end
-
 endmodule

@@ -38,12 +38,16 @@ BYTES_PER_SECTION = 32
 # Total bytes in one full kernel row (128 bytes = 128 uint8 elements).
 BYTES_PER_ROW     = NUM_SECTIONS * BYTES_PER_SECTION
 
-
 BIAS = -2_080_000
 
 # MCT_VALS: the six threshold values swept in Test 4.
 MCT_VALS    = [0, 128, 192, 224, 240, 248]
 NB_MCT_VALS = len(MCT_VALS)
+
+# Test 2 MACROS
+TEST2_START = 0
+NUM_STIM_SETS = 8  # has to be the same as value in tb_cleopatra.sv
+
 
 
 # =========================================================================
@@ -91,6 +95,11 @@ def relu_quant_with_bias(mac_val: int, bias: int) -> int:
         return psum & 0xF
 
 
+def compute_dot_product(kernel_row: np.ndarray, feature_vec: np.ndarray) -> int:
+    """Compute the scalar product of one kernel row and one feature vector."""
+    return int(np.dot(kernel_row.astype(np.int64), feature_vec.astype(np.int64)))
+
+
 # =========================================================================
 # FILE HELPERS
 # =========================================================================
@@ -129,8 +138,18 @@ def main():
 
     
     # GENERATE RANDOM STIMULUS DATA
-    kernel = np.random.randint(0, 256, size=(NB_KERNEL_ROWS, BYTES_PER_ROW), dtype=np.uint8)
+    kernel_sets = [
+        np.random.randint(0, 256, size=(NB_KERNEL_ROWS, BYTES_PER_ROW), dtype=np.uint8)
+        for _ in range(NUM_STIM_SETS)
+    ]
 
+    feature_sets_8 = [
+        np.random.randint(0, 256, size=(8, BYTES_PER_ROW), dtype=np.uint8)
+        for _ in range(NUM_STIM_SETS)
+    ]
+
+    # Keep the first set as the default root stimulus files used by existing tests.
+    kernel = kernel_sets[0]
     feature = np.random.randint(0, 256, size=BYTES_PER_ROW, dtype=np.uint8)
 
     # =========================================================================
@@ -155,7 +174,7 @@ def main():
     # =========================================================================
     # FILE 3: feature_vector_8times.txt for 8 different feature vectors
     # =========================================================================
-    features_8 = np.random.randint(0, 256, size=(8, BYTES_PER_ROW), dtype=np.uint8)
+    features_8 = feature_sets_8[0]
     with open(os.path.join(args.outdir, "feature_vector_8times.txt"), "w") as f:
         for p in range(8):
             for s in range(NUM_SECTIONS):
@@ -185,21 +204,61 @@ def main():
     # =========================================================================
     # FILE 6: golden_output_cleopatra.txt
     # =========================================================================
-    # cleopatra = spatz_DIMC_dual + accumulator. For feature vectors 1 through
-    # 3, compute the 32-row MatVec against the single kernel to get 32 psums
-    # per vector. Accumulate all 32*3 = 96 psums into a single running total.
-    acc_total = 0
-    for p in range(0, 8):
-        mac_p  = [compute_mac(kernel[r], features_8[p], mct=0) for r in range(NB_KERNEL_ROWS)]
-        psum_p = [(mac + BIAS) & 0xFFFFFF for mac in mac_p]
-        signed_psum_p = [ value if value < 0x800000 else value - 0x1000000 for value in psum_p]
-        print(f"\npsum_p (p={p}):\n {[f'{v:06x}' for v in psum_p]}\n")
+    # Flatten the 32x8 matrix of row/feature-vector biased partial sums into a single
+    # 256-entry vector in output order:
+    #   index = 32*j + i
+    # where j is the feature-vector index and i is the kernel-row index.
+    cleopatra_golden = [
+        # index for golden file = 32*j + i (feature-major output order).
+        (compute_dot_product(kernel[i], features_8[j]) + BIAS) & 0xFFFFFF
+        for j in range(8)
+        for i in range(NB_KERNEL_ROWS)
+    ]
+    write_golden(os.path.join(args.outdir, "golden_output_cleopatra.txt"), cleopatra_golden, width=32)
 
-        acc_total += sum(signed_psum_p)
-        
-        print(f"acc_total (after p={p}):\n {acc_total & 0xFFFFFF:06x}\n")
-    acc_total &= 0xFFFFFFFF
-    write_golden(os.path.join(args.outdir, "golden_output_cleopatra.txt"), [acc_total], width=32)
+    # =========================================================================
+    # FILE 7: golden_output_cleopatra_test2.txt
+    # =========================================================================
+    # Sum the 256 outputs from the selected range of numbered K stimulus sets,
+    # matching repeated accumulation without clearing in tb_cleopatra Test 2.
+
+    cleopatra_golden_test2_cleo = [0] * (NB_KERNEL_ROWS * 8)
+    
+    for kk in range(TEST2_START, NUM_STIM_SETS):
+        # generate the requested kernel and feature files
+        kernel_file = os.path.join(args.outdir, f"kernel_stim_{kk}.txt")
+        with open(kernel_file, "w") as f:
+            for r in range(NB_KERNEL_ROWS):
+                for s in range(NUM_SECTIONS):
+                    section = kernel_sets[kk][r, s * BYTES_PER_SECTION : (s + 1) * BYTES_PER_SECTION]
+                    f.write(section_to_hex(section) + "\n")
+
+        feature_file = os.path.join(args.outdir, f"feature_stim_8times_{kk}.txt")
+        with open(feature_file, "w") as f:
+            for p in range(8):
+                for s in range(NUM_SECTIONS):
+                    section = feature_sets_8[kk][p, s * BYTES_PER_SECTION : (s + 1) * BYTES_PER_SECTION]
+                    f.write(section_to_hex(section) + "\n")
+
+        # get the dot procuct of kk-th kernel and feature request 
+        new_val = [
+            # index for golden file = 32*j + i (feature-major output order).
+            (
+                compute_dot_product(
+                    kernel_sets[kk][i],
+                    feature_sets_8[kk][j],
+                )
+                + BIAS
+            )
+            & 0xFFFFFF
+            for j in range(8)
+            for i in range(NB_KERNEL_ROWS)
+        ]
+        for index in range(NB_KERNEL_ROWS * 8):
+            cleopatra_golden_test2_cleo[index] = (cleopatra_golden_test2_cleo[index] + new_val[index]) & 0xFFFFFFFF
+
+    # write the golden output for test2 to a file
+    write_golden(os.path.join(args.outdir, "golden_output_cleopatra_test2.txt"), cleopatra_golden_test2_cleo, width=32)
 
 
     # =========================================================================

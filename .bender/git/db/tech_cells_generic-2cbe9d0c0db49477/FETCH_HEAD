@@ -14,11 +14,13 @@ c815e3a9673522a01c1192fb543a9fd186a32737	not-for-merge	branch 'fix/verilator' of
 0fee529f0e39d7ca0ec6076029ef996cd2e26cb3	not-for-merge	branch 'fix_bender_targets' of https://github.com/pulp-platform/tech_cells_generic
 e0447821bf690fcabbc9fcf0794c19d30b56922e	not-for-merge	branch 'fix_missing_legacy_file' of https://github.com/pulp-platform/tech_cells_generic
 2cf66b7ed589954bcf90fd9c883053264d7aefb6	not-for-merge	branch 'fpga' of https://github.com/pulp-platform/tech_cells_generic
+a2705ad2025cf4daeb63c49810fb6de9d3b1f3f8	not-for-merge	branch 'gwaihir' of https://github.com/pulp-platform/tech_cells_generic
 313ffafcfb65d7ca80a1c046bf5730848809ef81	not-for-merge	branch 'gwt' of https://github.com/pulp-platform/tech_cells_generic
-3a3de73632a06826b1bd9c65a0a2e92b32016845	not-for-merge	branch 'master' of https://github.com/pulp-platform/tech_cells_generic
+81dc29f14024343e8c14a674718121517d729549	not-for-merge	branch 'master' of https://github.com/pulp-platform/tech_cells_generic
 5912352c9a9461de64e93355436f8efe3b6bc310	not-for-merge	branch 'mattia_s' of https://github.com/pulp-platform/tech_cells_generic
 43816f4895f25eba74b5fbae3226553f38148760	not-for-merge	branch 'nw/update-readme' of https://github.com/pulp-platform/tech_cells_generic
 951a71cd31f8b3cdac104e5328fa163a8ecabe09	not-for-merge	branch 'phsauter/tc_sram-random' of https://github.com/pulp-platform/tech_cells_generic
+9a55e8f5429d579abfa086d521ffbc087d27f1a5	not-for-merge	branch 'phsauter/tc_sram-synth' of https://github.com/pulp-platform/tech_cells_generic
 9b0af47613f7e8991da0b2c10defc0c5957090bf	not-for-merge	branch 'release/v0.2.14' of https://github.com/pulp-platform/tech_cells_generic
 e03526018b5e3ce41591514e2e5b61ca2b94d14f	not-for-merge	branch 'siracusa' of https://github.com/pulp-platform/tech_cells_generic
 425a2a04c7e2e6c4c3da6a6f1f6e1efe07cb1bc5	not-for-merge	branch 'sm/cp' of https://github.com/pulp-platform/tech_cells_generic

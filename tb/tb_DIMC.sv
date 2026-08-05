@@ -63,7 +63,7 @@ module tb_DIMC;
   // Must equal len(MCT_VALS) in gen_stim.py.
   parameter NB_MCT_VALS = 6;
 
-  localparam logic signed [23:0] BIAS = -2_080_000;
+  localparam logic [23:0] BIAS = 24'hE04300;
 
   // MCT_VALS: the six threshold values swept in Test 4.
   // Each value trims a different number of byte-elements from the computation.

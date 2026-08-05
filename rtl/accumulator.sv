@@ -15,11 +15,11 @@ module accumulator
   input  logic                        enable_i,
   input  logic                        clear_i,
 
-  input  logic signed [DATA_WIDTH-1:0] data_i,
-  output logic signed [OUT_WIDTH-1:0]  acc_o
+  input  logic [DATA_WIDTH-1:0] data_i,
+  output logic [OUT_WIDTH-1:0]  acc_o
 );
 
-  logic signed [OUT_WIDTH-1:0] acc_q;
+  logic [OUT_WIDTH-1:0] acc_q;
 
   always_ff @(posedge clk_i or negedge rst_ni) begin
     if(~rst_ni) begin

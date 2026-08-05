@@ -4,7 +4,8 @@
  */
 
 // Comment out a line to skip that test at compile time.
-`define TB_CLEOPATRA_TEST1   // Pipelined MatVec DIMC 0, feature indices P = 1 through 3
+`define TB_CLEOPATRA_TEST1 
+`define TB_CLEOPATRA_TEST2   // Repeated accumulation without clearing -- K passes
 // ----------------------------------------------------------------------------
 
 `timescale 1ns/1ps
@@ -16,18 +17,26 @@ module tb_cleopatra;
   // Parameters
   // -------------------------------------------------------------------------
   // SECTION_WIDTH: each DIMC memory section is 256 bits = 32 bytes.
+  
+  // Number of numbered kernel and feature stimulus sets to generate.
+  localparam int NUM_STIM_SETS = 8;  // has to be the same as value in stimuli/generate_stim.py
+
   parameter SECTION_WIDTH  = 256;
   parameter KERNEL_WEIGHTS_FILE       = "stimuli/kernel_weights.txt";
   parameter FEATURE_VECTOR_8X_FILE    = "stimuli/feature_vector_8times.txt";
   parameter GOLDEN_OUTPUT_CLEOPATRA_FILE = "stimuli/golden_output_cleopatra.txt";
+  parameter GOLDEN_OUTPUT_CLEOPATRA_TEST2_FILE = "stimuli/golden_output_cleopatra_test2.txt";
+  localparam int TEST2_K_START        = 0;  // start index for numbered stimulus sets
+  localparam int TEST2_K_END          = NUM_STIM_SETS;  // end index for numbered stimulus sets
 
-  // BIAS: 24-bit signed constant bias added to every MAC result at Stage 3.
-  localparam logic signed [23:0] BIAS = -2_080_000;
+  // BIAS: 24-bit unsigned two's-complement bias constant added to every MAC result.
+  localparam logic [23:0] BIAS = 24'hE04300;
 
   // Stimulus arrays (filled by $readmemh at simulation start)
   logic [SECTION_WIDTH-1:0] kernel_stim         [0 : NB_KERNEL_ROWS*4-1]; // 128 sections
   logic [SECTION_WIDTH-1:0] feature_stim_8times [0 : 8*4-1];              // 8 feature vectors x 4 sections
-  logic [31:0]              golden_acc_o        [0 : 0];                 // final accumulator value (1 entry)
+  logic [31:0]              golden_acc_o        [0 : 255];               // 256 accumulator golden values
+  logic [31:0]              golden_acc_o_test2_cleo [0 : 255];      // 256 accumulator golden values for Test 2 sum
 
   // Timing: same as tb_DIMC_dual.sv (100 MHz, 2 ns apply, 8 ns test)
   localparam time ClkPeriod = 10ns;
@@ -63,10 +72,7 @@ module tb_cleopatra;
   logic [SECTION_WIDTH-1:0] M   = '1;   // write mask: all ones = full word write
   logic [7:0]               MCT = '0;   // MCT=0: all 128 elements active (no masking)
 
-  // Input feature FIFO interface (driven by this testbench). READYN, PSOUT,
-  // inp_full/empty, wgt_full/empty, and the output FIFO's pop/full/empty are
-  // all internal to cleopatra now (auto-drained straight into the
-  // accumulator) -- acc_o is the only observable result.
+  // Input feature FIFO interface (driven by this testbench). 
   logic                     inp_push = 1'b0;  // push inp_data when high and not full
   logic [SECTION_WIDTH-1:0] inp_data = '0;    // 256-bit section to enqueue
 
@@ -74,26 +80,9 @@ module tb_cleopatra;
   logic                     wgt_push = 1'b0;  // push wgt_data when high and not full
   logic [SECTION_WIDTH-1:0] wgt_data = '0;    // 256-bit kernel section to enqueue
 
-  // Accumulator control: enabled for the whole test -- cleopatra internally
-  // ANDs this with its own out_pop, so it only actually accumulates once
-  // per popped result.
-  logic                acc_enable_i = 1'b0;
-  logic                acc_clear_i  = 1'b0;
-  logic signed [31:0]  acc_o;
-
-  // Number of values that have actually been accepted by the accumulator.
-  // Cleopatra keeps its output FIFO handshake internal, so observe the
-  // accumulator enable hierarchically to determine when processing is done.
-  int unsigned accumulated_count;
-
-  always_ff @(posedge clk or negedge rst_n) begin
-    if (!rst_n)
-      accumulated_count <= 0;
-    else if (acc_clear_i)
-      accumulated_count <= 0;
-    else if (i_dut.acc_enable)
-      accumulated_count <= accumulated_count + 1;
-  end
+  // Accumulator control: clear all accumulators before the test sequence.
+  logic               acc_clear_i  = 1'b0;
+  logic [31:0]        acc_o [0:255];
 
   // End-of-test flag - asserted when simulation finishes
   logic eot = 1'b0;
@@ -127,7 +116,6 @@ module tb_cleopatra;
     .inp_data     (inp_data),
     .wgt_push     (wgt_push),
     .wgt_data     (wgt_data),
-    .acc_enable_i (acc_enable_i),
     .acc_clear_i  (acc_clear_i),
     .acc_o        (acc_o)
   );
@@ -147,6 +135,13 @@ module tb_cleopatra;
     end
   end
 
+  task automatic clear_accumulators();
+    @(negedge clk);
+    acc_clear_i = 1'b1;
+
+    @(negedge clk);
+    acc_clear_i = 1'b0;
+  endtask
 
   task automatic write_full_kernel_dual(
     input logic [SECTION_WIDTH-1:0] kernel [0:NB_KERNEL_ROWS*4-1]
@@ -219,7 +214,6 @@ module tb_cleopatra;
   task automatic request_full_matvec_dimc0(
   );
 
-    assign acc_enable_i = 1'b1;                 
     for (int i = 0; i < NB_KERNEL_ROWS ; i++) begin
         COMPE = 1'b1; MODE = 2'b11; MCT = 8'd0;
         RA    = {5'(i), 2'b00}; ADDIN = BIAS;
@@ -241,42 +235,115 @@ module tb_cleopatra;
   // MAIN TEST SEQUENCE
   // =========================================================================
   initial begin
-    // Wait for reset release, then one idle cycle for DUT outputs to settle
+    // Wait for reset release, then clear the accumulators once before starting.
     @(posedge rst_n);
+    @(posedge clk);
+    acc_clear_i = 1'b1;
+    @(posedge clk);
+    acc_clear_i = 1'b0;
     @(posedge clk);
 
     // Load stimulus generated by stimuli/generate_stim.py.
     $readmemh(KERNEL_WEIGHTS_FILE,           kernel_stim);          // 128 sections: 32 rows x 4
     $readmemh(FEATURE_VECTOR_8X_FILE,        feature_stim_8times);  //  32 sections: 8 vectors x 4
-    $readmemh(GOLDEN_OUTPUT_CLEOPATRA_FILE,  golden_acc_o);         //   1 entry: final accumulator value
+    $readmemh(GOLDEN_OUTPUT_CLEOPATRA_FILE,  golden_acc_o);         // 256 accumulator golden values
+    $readmemh(GOLDEN_OUTPUT_CLEOPATRA_TEST2_FILE, golden_acc_o_test2_cleo); // 256 accumulator golden values for Test 2 sum
+
 
 `ifdef TB_CLEOPATRA_TEST1
     // =======================================================================
-    // TEST 1: PIPELINED MATRIX-VECTOR MULTIPLICATION -- feature indices P = 1 through 3, DIMC 0
+    // TEST 1: Testing Cleopatra outpput with p=8
     // =======================================================================
-    $display("[TB] Test 1: Pipelined MatVec DIMC 0, single phase");
+    $display("[TB] Test 1: Testing Cleopatra outpput with p=8");
     begin
-      automatic int test_fail = 1;
-      sel = 1'b0;
+      automatic int test_fail = 0;
+      acc_clear_i = 1'b0;
 
-      // Reload kernel into DIMC 0
+
       write_full_kernel_dual(kernel_stim);
-
       for (int p = 0; p < 8; p++) begin
-        load_feature_dual(feature_stim_8times[4*p], feature_stim_8times[4*p+1], feature_stim_8times[4*p+2], feature_stim_8times[4*p+3]);
+        // Use p different feature vectors  
+        load_feature_dual(feature_stim_8times[4*p],
+                          feature_stim_8times[4*p+1],
+                          feature_stim_8times[4*p+2],
+                          feature_stim_8times[4*p+3]);
         request_full_matvec_dimc0();
       end
-        extra_cycles_stall();
+      extra_cycles_stall();
 
-        $display("[TB] acc_o=0x%08h, golden_acc_o=0x%08h", acc_o, golden_acc_o[0]);
-        if (acc_o == golden_acc_o[0]) begin
-          test_fail = 0;
-        end 
+      for (int i = 0; i < 256; i++) begin
+        if (acc_o[i] !== golden_acc_o[i]) begin
+          /*$display("[TB] MISMATCH at accumulator %0d: got 0x%08h expected 0x%08h",
+                   i, acc_o[i], golden_acc_o[i]);*/
+          test_fail = 1;
+        end else begin
+          /*$display("[TB] MATCH at accumulator %0d: got 0x%08h expected 0x%08h",
+                   i, acc_o[i], golden_acc_o[i]);*/
+        end
+      end
+
+      $display("[TB] Test 1: completed");
 
       if (test_fail == 0) begin $display("[TB] Test 1: PASS"); pass_count++; end
-      else                begin $display("[TB] Test 1: FAIL (%0d mismatches)", test_fail); fail_count++; end
+      else                begin $display("[TB] Test 1: FAIL"); fail_count++; end
     end
 `endif // TB_CLEOPATRA_TEST1
+
+
+`ifdef TB_CLEOPATRA_TEST2
+    // =======================================================================
+    // TEST 2: REPEATED ACCUMULATION WITHOUT CLEARING -- K passes
+    // =======================================================================
+    $display("[TB] Test 2: REPEATED ACCUMULATION WITHOUT CLEARING -- K passes");
+    begin
+      automatic int test_fail = 0;
+      automatic int k;
+      automatic string feature_file;
+      automatic string kernel_file;
+
+      // clear accumulators
+      clear_accumulators();
+
+      for (k = TEST2_K_START; k < TEST2_K_END; k++) begin
+        // reading txt file names into the string variables for this iteration 
+        $sformat(kernel_file, "stimuli/kernel_stim_%0d.txt", k);
+        $sformat(feature_file, "stimuli/feature_stim_8times_%0d.txt", k);
+
+        // reading txt files into the arrays 
+        $readmemh(kernel_file, kernel_stim);
+        $readmemh(feature_file, feature_stim_8times);
+
+        write_full_kernel_dual(kernel_stim);
+        for (int p = 0; p < 8; p++) begin
+          load_feature_dual(feature_stim_8times[4*p],
+                            feature_stim_8times[4*p+1],
+                            feature_stim_8times[4*p+2],
+                            feature_stim_8times[4*p+3]);
+          request_full_matvec_dimc0();
+        end
+        extra_cycles_stall();
+
+      end
+
+      for (int i = 0; i < 256; i++) begin
+        if (acc_o[i] !== golden_acc_o_test2_cleo[i]) begin
+          /*$display("[TB] MISMATCH at accumulator %0d: got 0x%08h expected 0x%08h",
+                   i, acc_o[i], golden_acc_o_test2_cleo[i]);*/
+          test_fail = 1;
+        end else begin
+          /*$display("[TB] MATCH at accumulator %0d: got 0x%08h expected 0x%08h",
+                   i, acc_o[i], golden_acc_o_test2_cleo[i]);*/
+        end
+      end
+
+      $display("[TB] Test 2: completed");
+
+      if (test_fail == 0) begin $display("[TB] Test 2: PASS"); pass_count++; end
+      else                begin $display("[TB] Test 2: FAIL"); fail_count++; end
+    end
+
+`endif // TB_CLEOPATRA_TEST2
+
 
     // =========================================================================
     // FINAL SUMMARY

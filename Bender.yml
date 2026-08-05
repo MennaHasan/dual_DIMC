@@ -19,6 +19,7 @@ sources:
       - rtl/dimc_ctrl.sv
       - rtl/dimc_top.sv
       - rtl/accumulator.sv
+      - rtl/cleopatra_ctrl.sv
       - rtl/cleopatra.sv
 
   - target: tb
