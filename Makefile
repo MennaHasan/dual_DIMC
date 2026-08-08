@@ -6,6 +6,10 @@ RTL_DIR     := rtl
 TB_DIR      := tb
 SIM_DIR     := sim
 STIM_DIR    := stimuli
+DIMC_STIM_DIR := $(STIM_DIR)/dimc_tests
+CLEO_TEST1_STIM_DIR := $(STIM_DIR)/cleo_test1
+CLEO_TEST2_STIM_DIR := $(STIM_DIR)/cleo_test2
+CLEO_TEST3_STIM_DIR := $(STIM_DIR)/cleo_test3
 WORK_DIR    := $(SIM_DIR)/work
 COMPILE_TCL := $(SIM_DIR)/compile.tcl
 
@@ -42,6 +46,7 @@ update-ips: $(BENDER)
 # ── Generate stimulus ─────────────────────────────────────────
 stim:
 	python3 $(STIM_DIR)/generate_stim.py --outdir $(STIM_DIR)
+	python3 $(STIM_DIR)/cleo_test3_stim.py
 
 # ── Compile RTL + TBs ─────────────────────────────────────────
 hw-compile: update-ips
@@ -75,12 +80,20 @@ sim-datapath: stim hw-compile
 	vsim $(VSIM_FLAGS) -l $(SIM_DIR)/transcript -lib $(WORK_DIR) tb_dimc_datapath -do $(VSIM_DO)
 
 sim-cleopatra: stim hw-compile
+	rm -f $(CLEO_TEST3_STIM_DIR)/test3_accumulator_output.txt
+	rm -f $(CLEO_TEST3_STIM_DIR)/test3_final_matmul_output.txt
 	vsim $(VSIM_FLAGS) -l $(SIM_DIR)/transcript -lib $(WORK_DIR) tb_cleopatra -do $(VSIM_DO)
+	@if test -f $(CLEO_TEST3_STIM_DIR)/test3_accumulator_output.txt; then \
+		python3 $(STIM_DIR)/matrix_untiling.py; \
+	fi
 
 # ── Remove all generated artefacts ────────────────────────────
 hw-clean:
 	rm -rf $(WORK_DIR)
 	rm -f  $(COMPILE_TCL) $(SIM_DIR)/transcript $(SIM_DIR)/*.vcd
 	rm -f  transcript vsim.wlf *.vcd
-	rm -f  $(STIM_DIR)/*.txt
+	rm -f  $(DIMC_STIM_DIR)/*.txt
+	rm -f  $(CLEO_TEST1_STIM_DIR)/*.txt
+	rm -f  $(CLEO_TEST2_STIM_DIR)/*.txt
+	rm -f  $(CLEO_TEST3_STIM_DIR)/*.txt
 	rm -f  etch*

@@ -6,6 +6,7 @@
 // Comment out a line to skip that test at compile time.
 `define TB_CLEOPATRA_TEST1 
 `define TB_CLEOPATRA_TEST2   // Repeated accumulation without clearing -- K passes
+`define TB_CLEOPATRA_TEST3   // Full matrix multiplication - tiled to fit DIMC matrices size
 // ----------------------------------------------------------------------------
 
 `timescale 1ns/1ps
@@ -18,16 +19,55 @@ module tb_cleopatra;
   // -------------------------------------------------------------------------
   // SECTION_WIDTH: each DIMC memory section is 256 bits = 32 bytes.
   
+
+/* ############### SET ############### */
+//Full matrix dimensions, made multiples of DIMC dimensions for now
+//should match the values in the cleo_test3_stim.py file
+
+  localparam int TEST3_K              = 3;
+  localparam int TEST3_L              = 2;
+  localparam int TEST3_Q              = 4;
+
+
+
+
   // Number of numbered kernel and feature stimulus sets to generate.
   localparam int NUM_STIM_SETS = 8;  // has to be the same as value in stimuli/generate_stim.py
 
   parameter SECTION_WIDTH  = 256;
-  parameter KERNEL_WEIGHTS_FILE       = "stimuli/kernel_weights.txt";
-  parameter FEATURE_VECTOR_8X_FILE    = "stimuli/feature_vector_8times.txt";
-  parameter GOLDEN_OUTPUT_CLEOPATRA_FILE = "stimuli/golden_output_cleopatra.txt";
-  parameter GOLDEN_OUTPUT_CLEOPATRA_TEST2_FILE = "stimuli/golden_output_cleopatra_test2.txt";
+  parameter KERNEL_WEIGHTS_FILE       = "stimuli/dimc_tests/kernel_weights.txt";
+  parameter FEATURE_VECTOR_8X_FILE    = "stimuli/cleo_test1/feature_vector_8times.txt";
+  parameter GOLDEN_OUTPUT_CLEOPATRA_FILE = "stimuli/cleo_test1/golden_output_cleopatra.txt";
+  parameter GOLDEN_OUTPUT_CLEOPATRA_TEST2_FILE = "stimuli/cleo_test2/golden_output_cleopatra_test2.txt";
+  parameter TEST3_TILED_WEIGHTS_FILE = "stimuli/cleo_test3/test3_tiled_weights.txt";
+  parameter TEST3_TILED_INPUTS_FILE = "stimuli/cleo_test3/test3_tiled_inputs.txt";
+  parameter TEST3_GOLDEN_OUTPUT_FILE = "stimuli/cleo_test3/test3_golden_matmul_output.txt";
+  parameter TEST3_FINAL_OUTPUT_FILE = "stimuli/cleo_test3/test3_final_matmul_output.txt";
   localparam int TEST2_K_START        = 0;  // start index for numbered stimulus sets
   localparam int TEST2_K_END          = NUM_STIM_SETS;  // end index for numbered stimulus sets
+  localparam int TEST3_M              = 32;
+  localparam int TEST3_N              = 32;
+  localparam int TEST3_P              = 8;
+
+  
+  localparam int TEST3_NUM_WEIGHT_TILES = TEST3_K * TEST3_L;
+  localparam int TEST3_WEIGHT_TILE_BITS = 32 * TEST3_M * TEST3_N;
+  localparam int TEST3_NUM_INPUT_TILES = TEST3_L * TEST3_Q;
+  localparam int TEST3_OUTPUT_ELEMENTS = TEST3_K * TEST3_M * TEST3_Q * TEST3_P;
+  localparam int TEST3_INPUT_TILE_BITS = 32 * TEST3_N * TEST3_P;
+  localparam int TEST3_FEATURE_BITS = 32 * TEST3_N;
+  localparam int TEST3_FEATURE_SECTIONS =
+      TEST3_FEATURE_BITS / SECTION_WIDTH;
+
+  // One packed value represents one complete matrix tile. Kernel tiles are
+  // row-major; input tiles are column-major so each feature is contiguous.
+  typedef logic [TEST3_WEIGHT_TILE_BITS-1:0] test3_kernel_tile_t;
+  // [column][256-bit section][bit within section]. Ascending outer ranges
+  // place column 0/section 0 at the most-significant end, matching the file.
+  typedef logic
+      [0:TEST3_P-1]
+      [0:TEST3_FEATURE_SECTIONS-1]
+      [SECTION_WIDTH-1:0] test3_input_tile_t;
 
   // BIAS: 24-bit unsigned two's-complement bias constant added to every MAC result.
   localparam logic [23:0] BIAS = 24'hE04300;
@@ -37,6 +77,18 @@ module tb_cleopatra;
   logic [SECTION_WIDTH-1:0] feature_stim_8times [0 : 8*4-1];              // 8 feature vectors x 4 sections
   logic [31:0]              golden_acc_o        [0 : 255];               // 256 accumulator golden values
   logic [31:0]              golden_acc_o_test2_cleo [0 : 255];      // 256 accumulator golden values for Test 2 sum
+  test3_kernel_tile_t test3_tiled_weights_flat
+      [0 : TEST3_NUM_WEIGHT_TILES-1];
+  test3_kernel_tile_t test3_kernel_stim
+      [0 : TEST3_K-1][0 : TEST3_L-1];
+  test3_input_tile_t test3_tiled_inputs_flat
+      [0 : TEST3_NUM_INPUT_TILES-1];
+  test3_input_tile_t test3_input_stim
+      [0 : TEST3_L-1][0 : TEST3_Q-1];
+  logic [31:0] test3_golden_matmul_output
+      [0 : TEST3_OUTPUT_ELEMENTS-1];
+  logic [31:0] test3_final_matmul_output
+      [0 : TEST3_OUTPUT_ELEMENTS-1];
 
   // Timing: same as tb_DIMC_dual.sv (100 MHz, 2 ns apply, 8 ns test)
   localparam time ClkPeriod = 10ns;
@@ -81,7 +133,7 @@ module tb_cleopatra;
   logic [SECTION_WIDTH-1:0] wgt_data = '0;    // 256-bit kernel section to enqueue
 
   // Accumulator control: clear all accumulators before the test sequence.
-  logic               acc_clear_i  = 1'b0;
+  logic               clear = 1'b0;
   logic [31:0]        acc_o [0:255];
 
   // End-of-test flag - asserted when simulation finishes
@@ -116,7 +168,7 @@ module tb_cleopatra;
     .inp_data     (inp_data),
     .wgt_push     (wgt_push),
     .wgt_data     (wgt_data),
-    .acc_clear_i  (acc_clear_i),
+    .clear        (clear),
     .acc_o        (acc_o)
   );
 
@@ -137,11 +189,11 @@ module tb_cleopatra;
   task automatic clear_accumulators();
     @(posedge clk);
     #ApplTime;
-    acc_clear_i = 1'b1;
+    clear = 1'b1;
 
     @(posedge clk);
     #ApplTime;
-    acc_clear_i = 1'b0;
+    clear = 1'b0;
   endtask
 
   task automatic write_full_kernel_dual(
@@ -170,6 +222,26 @@ module tb_cleopatra;
     // Final edge: last section's write completes.
     @(posedge clk); #ApplTime;
     WCSN = 1'b1; WEN = 1'b1;
+  endtask
+
+  // Convert a packed Test 3 tile into the section-array interface used by
+  // write_full_kernel_dual. Section 0 comes from the tile's most-significant
+  // bits, matching the Python generator's row-major kernel packing.
+  task automatic write_test3_kernel_dual(
+    input test3_kernel_tile_t kernel
+  );
+    logic [SECTION_WIDTH-1:0] kernel_sections
+        [0:NB_KERNEL_ROWS*4-1];
+
+    for (int section = 0; section < NB_KERNEL_ROWS*4; section++) begin
+      kernel_sections[section] =
+          kernel[
+              TEST3_WEIGHT_TILE_BITS - section*SECTION_WIDTH - 1
+              -: SECTION_WIDTH
+          ];
+    end
+
+    write_full_kernel_dual(kernel_sections);
   endtask
 
   // load_feature_dual - writes all 4 sections of the feature vector into the feature buffer. 
@@ -239,9 +311,9 @@ module tb_cleopatra;
     // Wait for reset release, then clear the accumulators once before starting.
     @(posedge rst_n);
     @(posedge clk);
-    acc_clear_i = 1'b1;
+    clear = 1'b1;
     @(posedge clk);
-    acc_clear_i = 1'b0;
+    clear = 1'b0;
     @(posedge clk);
 
     // Load stimulus generated by stimuli/generate_stim.py.
@@ -258,7 +330,7 @@ module tb_cleopatra;
     $display("[TB] Test 1: Testing Cleopatra outpput with p=8");
     begin
       automatic int test_fail = 0;
-      acc_clear_i = 1'b0;
+      clear = 1'b0;
 
 
       write_full_kernel_dual(kernel_stim);
@@ -307,8 +379,8 @@ module tb_cleopatra;
 
       for (k = TEST2_K_START; k < TEST2_K_END; k++) begin
         // reading txt file names into the string variables for this iteration 
-        $sformat(kernel_file, "stimuli/kernel_stim_%0d.txt", k);
-        $sformat(feature_file, "stimuli/feature_stim_8times_%0d.txt", k);
+        $sformat(kernel_file, "stimuli/cleo_test2/kernel_stim_%0d.txt", k);
+        $sformat(feature_file, "stimuli/cleo_test2/feature_stim_8times_%0d.txt", k);
 
         // reading txt files into the arrays 
         $readmemh(kernel_file, kernel_stim);
@@ -322,9 +394,9 @@ module tb_cleopatra;
                             feature_stim_8times[4*p+3]);
           request_full_matvec_dimc0();
         end
-        extra_cycles_stall();
 
       end
+      extra_cycles_stall();
 
       for (int i = 0; i < 256; i++) begin
         if (acc_o[i] !== golden_acc_o_test2_cleo[i]) begin
@@ -345,6 +417,116 @@ module tb_cleopatra;
 
 `endif // TB_CLEOPATRA_TEST2
 
+`ifdef TB_CLEOPATRA_TEST3
+    // =======================================================================
+    // TEST 3: Full matrix multiplication - tiled to fit DIMC matrices size
+    // =======================================================================
+    $display("[TB] Test 3: Load tiled weight matrices");
+    begin
+      automatic int test_fail = 0;
+      automatic int accumulator_file;
+      automatic int python_status;
+
+      clear_accumulators();
+
+      // Each file token is one complete M-by-N kernel tile.
+      $readmemh(TEST3_TILED_WEIGHTS_FILE, test3_tiled_weights_flat);
+
+      // Tile order is [0,0], [0,1], ... [k-1,l-1].
+      for (int k_idx = 0; k_idx < TEST3_K; k_idx++) begin
+        for (int l_idx = 0; l_idx < TEST3_L; l_idx++) begin
+          test3_kernel_stim[k_idx][l_idx] =
+              test3_tiled_weights_flat[k_idx*TEST3_L + l_idx];
+        end
+      end
+
+      // Each file token is one complete N-by-P input tile.
+      $readmemh(TEST3_TILED_INPUTS_FILE, test3_tiled_inputs_flat);
+
+      // Column-major tile order:
+      // [0,0], [1,0], ... [l-1,0], [0,1], ... [l-1,q-1].
+      for (int l_idx = 0; l_idx < TEST3_L; l_idx++) begin
+        for (int q_idx = 0; q_idx < TEST3_Q; q_idx++) begin
+          test3_input_stim[l_idx][q_idx] =
+              test3_tiled_inputs_flat[q_idx*TEST3_L + l_idx];
+        end
+      end
+
+      accumulator_file = $fopen(
+          "stimuli/cleo_test3/test3_accumulator_output.txt",
+          "w"
+      );
+      if (accumulator_file == 0) begin
+        $fatal(1, "[TB] Test 3: failed to open accumulator output file");
+      end
+
+      for (int k = 0; k < TEST3_K; k++) begin
+        for (int q = 0; q < TEST3_Q; q++) begin
+
+          // This computes one M-by-P output tile.
+          for (int l = 0; l < TEST3_L; l++) begin
+            write_test3_kernel_dual(test3_kernel_stim[k][l]);
+            // this loop is for the p=8 feature vectors in the input matrix
+            for (int p = 0; p < TEST3_P; p++) begin
+              load_feature_dual(test3_input_stim[l][q][p][0],
+                                test3_input_stim[l][q][p][1],
+                                test3_input_stim[l][q][p][2],
+                                test3_input_stim[l][q][p][3]);
+              
+              request_full_matvec_dimc0();
+            end
+          end
+          extra_cycles_stall();
+
+          // Append one complete M-by-P output tile in row-major order.
+          for (int row = 0; row < TEST3_M; row++) begin
+            for (int col = 0; col < TEST3_P; col++) begin
+              $fdisplay(
+                  accumulator_file,
+                  "%08h",
+                  acc_o[col*TEST3_M + row]
+              );
+            end
+          end
+
+          clear_accumulators();
+
+        end
+      end
+      $fclose(accumulator_file);
+
+      python_status = $system(
+          "python3 stimuli/matrix_untiling.py"
+      );
+
+      if (python_status != 0) begin
+        $error("[TB] Test 3: matrix_untiling.py failed");
+        test_fail++;
+      end else begin
+        $readmemh(TEST3_GOLDEN_OUTPUT_FILE, test3_golden_matmul_output);
+        $readmemh(TEST3_FINAL_OUTPUT_FILE, test3_final_matmul_output);
+
+        for (int output_index = 0;
+             output_index < TEST3_OUTPUT_ELEMENTS;
+             output_index++) begin
+          if (test3_final_matmul_output[output_index] !==
+              test3_golden_matmul_output[output_index]) begin
+            $error(
+                "[TB] Test 3 mismatch at %0d: got 0x%08h expected 0x%08h",
+                output_index,
+                test3_final_matmul_output[output_index],
+                test3_golden_matmul_output[output_index]
+            );
+            test_fail++;
+          end
+        end
+      end
+
+      if (test_fail == 0) begin $display("[TB] Test 3: PASS"); pass_count++; end
+      else                begin $display("[TB] Test 3: FAIL"); fail_count++; end
+    end
+
+`endif // TB_CLEOPATRA_TEST3
 
     // =========================================================================
     // FINAL SUMMARY

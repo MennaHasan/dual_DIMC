@@ -78,12 +78,12 @@ module tb_DIMC_dual;
   // -------------------------------------------------------------------------
   // SECTION_WIDTH: each DIMC memory section is 256 bits = 32 bytes.
   parameter SECTION_WIDTH  = 256;
-  parameter KERNEL_WEIGHTS_FILE         = "stimuli/kernel_weights.txt";
-  parameter FEATURE_VECTOR_FILE         = "stimuli/feature_vector.txt";
-  parameter GOLDEN_MATVEC_FILE          = "stimuli/golden_4bit.txt";
-  parameter GOLDEN_PSOUT_FILE           = "stimuli/golden_psum_24bit.txt";
-  parameter GOLDEN_DOT_PRODUCT_MCT_FILE = "stimuli/golden_mct_4bit.txt";
-  parameter GOLDEN_PSOUT_MCT_FILE       = "stimuli/golden_psum_mct_24bit.txt";
+  parameter KERNEL_WEIGHTS_FILE         = "stimuli/dimc_tests/kernel_weights.txt";
+  parameter FEATURE_VECTOR_FILE         = "stimuli/dimc_tests/feature_vector.txt";
+  parameter GOLDEN_MATVEC_FILE          = "stimuli/dimc_tests/golden_4bit.txt";
+  parameter GOLDEN_PSOUT_FILE           = "stimuli/dimc_tests/golden_psum_24bit.txt";
+  parameter GOLDEN_DOT_PRODUCT_MCT_FILE = "stimuli/dimc_tests/golden_mct_4bit.txt";
+  parameter GOLDEN_PSOUT_MCT_FILE       = "stimuli/dimc_tests/golden_psum_mct_24bit.txt";
 
   // NB_MCT_VALS: number of distinct MCT values in the sweep test (Test 11-12).
   parameter NB_MCT_VALS = 6;

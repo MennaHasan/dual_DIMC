@@ -135,6 +135,12 @@ def main():
 
     np.random.seed(args.seed)
     os.makedirs(args.outdir, exist_ok=True)
+    dimc_tests_dir = os.path.join(args.outdir, "dimc_tests")
+    cleo_test1_dir = os.path.join(args.outdir, "cleo_test1")
+    cleo_test2_dir = os.path.join(args.outdir, "cleo_test2")
+    os.makedirs(dimc_tests_dir, exist_ok=True)
+    os.makedirs(cleo_test1_dir, exist_ok=True)
+    os.makedirs(cleo_test2_dir, exist_ok=True)
 
     
     # GENERATE RANDOM STIMULUS DATA
@@ -155,7 +161,7 @@ def main():
     # =========================================================================
     # FILE 1: kernel_weights.txt  
     # =========================================================================
-    with open(os.path.join(args.outdir, "kernel_weights.txt"), "w") as f:
+    with open(os.path.join(dimc_tests_dir, "kernel_weights.txt"), "w") as f:
         for r in range(NB_KERNEL_ROWS):
             for s in range(NUM_SECTIONS):
                 # Extract the 32-byte slice for this section of this row
@@ -165,7 +171,7 @@ def main():
     # =========================================================================
     # FILE 2: feature_vector.txt for 1 full feature vector 
     # =========================================================================
-    with open(os.path.join(args.outdir, "feature_vector.txt"), "w") as f:
+    with open(os.path.join(dimc_tests_dir, "feature_vector.txt"), "w") as f:
         for s in range(NUM_SECTIONS):
             section = feature[s * BYTES_PER_SECTION : (s + 1) * BYTES_PER_SECTION]
             f.write(section_to_hex(section) + "\n")
@@ -175,7 +181,7 @@ def main():
     # FILE 3: feature_vector_8times.txt for 8 different feature vectors
     # =========================================================================
     features_8 = feature_sets_8[0]
-    with open(os.path.join(args.outdir, "feature_vector_8times.txt"), "w") as f:
+    with open(os.path.join(cleo_test1_dir, "feature_vector_8times.txt"), "w") as f:
         for p in range(8):
             for s in range(NUM_SECTIONS):
                 section = features_8[p, s * BYTES_PER_SECTION : (s + 1) * BYTES_PER_SECTION]
@@ -194,12 +200,12 @@ def main():
     # FILE 4: golden_matvec_4bit.txt
     # =========================================================================
     golden_matvec = [relu_quant_with_bias(mac, BIAS) for mac in mac_full]
-    write_golden(os.path.join(args.outdir, "golden_4bit.txt"), golden_matvec, width=8)
+    write_golden(os.path.join(dimc_tests_dir, "golden_4bit.txt"), golden_matvec, width=8)
 
     # =========================================================================
     # FILE 5: golden_psum_24bit.txt  (Test 3 expected 24-bit partial sums)
     # =========================================================================
-    write_golden(os.path.join(args.outdir, "golden_psum_24bit.txt"), psum_full, width=24)
+    write_golden(os.path.join(dimc_tests_dir, "golden_psum_24bit.txt"), psum_full, width=24)
 
     # =========================================================================
     # FILE 6: golden_output_cleopatra.txt
@@ -214,7 +220,11 @@ def main():
         for j in range(8)
         for i in range(NB_KERNEL_ROWS)
     ]
-    write_golden(os.path.join(args.outdir, "golden_output_cleopatra.txt"), cleopatra_golden, width=32)
+    write_golden(
+        os.path.join(cleo_test1_dir, "golden_output_cleopatra.txt"),
+        cleopatra_golden,
+        width=32,
+    )
 
     # =========================================================================
     # FILE 7: golden_output_cleopatra_test2.txt
@@ -223,17 +233,19 @@ def main():
     # matching repeated accumulation without clearing in tb_cleopatra Test 2.
 
     cleopatra_golden_test2_cleo = [0] * (NB_KERNEL_ROWS * 8)
-    
     for kk in range(TEST2_START, NUM_STIM_SETS):
         # generate the requested kernel and feature files
-        kernel_file = os.path.join(args.outdir, f"kernel_stim_{kk}.txt")
+        kernel_file = os.path.join(cleo_test2_dir, f"kernel_stim_{kk}.txt")
         with open(kernel_file, "w") as f:
             for r in range(NB_KERNEL_ROWS):
                 for s in range(NUM_SECTIONS):
                     section = kernel_sets[kk][r, s * BYTES_PER_SECTION : (s + 1) * BYTES_PER_SECTION]
                     f.write(section_to_hex(section) + "\n")
 
-        feature_file = os.path.join(args.outdir, f"feature_stim_8times_{kk}.txt")
+        feature_file = os.path.join(
+            cleo_test2_dir,
+            f"feature_stim_8times_{kk}.txt",
+        )
         with open(feature_file, "w") as f:
             for p in range(8):
                 for s in range(NUM_SECTIONS):
@@ -258,7 +270,11 @@ def main():
             cleopatra_golden_test2_cleo[index] = (cleopatra_golden_test2_cleo[index] + new_val[index]) & 0xFFFFFFFF
 
     # write the golden output for test2 to a file
-    write_golden(os.path.join(args.outdir, "golden_output_cleopatra_test2.txt"), cleopatra_golden_test2_cleo, width=32)
+    write_golden(
+        os.path.join(cleo_test2_dir, "golden_output_cleopatra_test2.txt"),
+        cleopatra_golden_test2_cleo,
+        width=32,
+    )
 
 
     # =========================================================================
@@ -273,12 +289,16 @@ def main():
     # FILE 7: golden_mct_4bit.txt  (Test 4 expected 4-bit outputs)
     # =========================================================================
     golden_mct = [relu_quant_with_bias(mac, BIAS) for mac in mac_mct]
-    write_golden(os.path.join(args.outdir, "golden_mct_4bit.txt"), golden_mct, width=8)
+    write_golden(os.path.join(dimc_tests_dir, "golden_mct_4bit.txt"), golden_mct, width=8)
 
     # =========================================================================
     # FILE 8: golden_psum_mct_24bit.txt  (Test 4 expected 24-bit partial sums)
     # =========================================================================
-    write_golden(os.path.join(args.outdir, "golden_psum_mct_24bit.txt"), psum_mct, width=24)
+    write_golden(
+        os.path.join(dimc_tests_dir, "golden_psum_mct_24bit.txt"),
+        psum_mct,
+        width=24,
+    )
 
     # =========================================================================
     # SUMMARY REPORT

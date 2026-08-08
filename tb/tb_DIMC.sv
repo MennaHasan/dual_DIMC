@@ -52,12 +52,12 @@ module tb_DIMC;
   // Stimulus files produced by gen_stim.py.
   // They must be present in the simulator's working directory before
   // the simulation runs; gen_stim.py writes them to the current directory.
-  parameter KERNEL_WEIGHTS_FILE        = "stimuli/kernel_weights.txt";       // File 1
-  parameter FEATURE_VECTOR_FILE        = "stimuli/feature_vector.txt";       // File 2
-  parameter GOLDEN_MATVEC_FILE          = "stimuli/golden_4bit.txt";         // File 3
-  parameter GOLDEN_PSOUT_FILE           = "stimuli/golden_psum_24bit.txt";   // File 4
-  parameter GOLDEN_DOT_PRODUCT_MCT_FILE = "stimuli/golden_mct_4bit.txt";     // File 5
-  parameter GOLDEN_PSOUT_MCT_FILE       = "stimuli/golden_psum_mct_24bit.txt"; // File 6
+  parameter KERNEL_WEIGHTS_FILE        = "stimuli/dimc_tests/kernel_weights.txt";       // File 1
+  parameter FEATURE_VECTOR_FILE        = "stimuli/dimc_tests/feature_vector.txt";       // File 2
+  parameter GOLDEN_MATVEC_FILE          = "stimuli/dimc_tests/golden_4bit.txt";         // File 3
+  parameter GOLDEN_PSOUT_FILE           = "stimuli/dimc_tests/golden_psum_24bit.txt";   // File 4
+  parameter GOLDEN_DOT_PRODUCT_MCT_FILE = "stimuli/dimc_tests/golden_mct_4bit.txt";     // File 5
+  parameter GOLDEN_PSOUT_MCT_FILE       = "stimuli/dimc_tests/golden_psum_mct_24bit.txt"; // File 6
 
   // NB_MCT_VALS: how many distinct MCT values are swept in Test 4.
   // Must equal len(MCT_VALS) in gen_stim.py.

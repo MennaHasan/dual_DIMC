@@ -45,7 +45,7 @@ module cleopatra #(
     input  logic [SECTION_WIDTH-1:0] wgt_data,
 
     // accumulator control
-    input  logic                        acc_clear_i,
+    input  logic                        clear,
     output logic [OUT_WIDTH-1:0]        acc_o [0:255]
 );
 
@@ -68,6 +68,7 @@ module cleopatra #(
     ) u_ctrl (
         .clk      (clk   ),
         .rst_n    (rst_n ),
+        .clear    (clear ),
         .out_pop  (out_pop),
         .acc_sel_o(acc_sel)
     );
@@ -138,7 +139,7 @@ module cleopatra #(
                 .clk_i    (clk         ),
                 .rst_ni   (rst_n       ),
                 .enable_i (acc_enable  ),
-                .clear_i  (acc_clear_i ),
+                .clear_i  (clear       ),
                 .data_i   (out_data    ),
                 .acc_o    (acc_o[i]    )
             );

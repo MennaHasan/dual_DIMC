@@ -10,6 +10,7 @@ module cleopatra_ctrl #(
 )(
     input  logic clk,
     input  logic rst_n,
+    input  logic clear,
     input  logic out_pop,
     output logic [WIDTH-1:0] acc_sel_o
 );
@@ -19,8 +20,9 @@ module cleopatra_ctrl #(
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             idx_q <= 8'd0;
+        end else if (clear) begin
+            idx_q <= 8'd0;
         end else begin
-
             if (out_pop)
                 idx_q <= idx_q + 1'b1;
         end
