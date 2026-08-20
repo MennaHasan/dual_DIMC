@@ -6,8 +6,8 @@
  * ============================================================
  * Testbench for spatz_DIMC_dual (spatz_DIMC_dual.sv).
  *
- * spatz_DIMC_dual wraps two spatz_DIMC macros behind a shared port set
- * and three FIFOs (weight, input, output).  
+ * spatz_DIMC_dual wraps two independently controlled spatz_DIMC macros and
+ * three FIFOs (weight, input, output). sel selects only the observed output.
  * 
  * PIPELINE LATENCY
  * 
@@ -121,8 +121,8 @@ module tb_DIMC_dual;
   logic sel = 1'b0;
 
   // All initial values are the safe idle state (no operation firing at time 0).
-  logic        COMPE  = 1'b0;   
-  logic        FCSN   = 1'b1;   
+  logic        COMPE  = 1'b0;
+  logic        FCSN   = 1'b1;
   logic [1:0]  MODE   = 2'b11;  
   logic [1:0]  FA     = '0;     
   logic [23:0] ADDIN  = '0;     
@@ -174,22 +174,38 @@ module tb_DIMC_dual;
     .clk      (clk),
     .rst_n    (rst_n),
     .sel      (sel),
-    .COMPE    (COMPE),
-    .FCSN     (FCSN),
-    .MODE     (MODE),
-    .FA       (FA),
-    .ADDIN    (ADDIN),
-    .RA       (RA),
-    .WA       (WA),
-    .RCSN     (RCSN),
-    .RCSN0    (RCSN0),
-    .RCSN1    (RCSN1),
-    .RCSN2    (RCSN2),
-    .RCSN3    (RCSN3),
-    .WCSN     (WCSN),
-    .WEN      (WEN),
-    .M        (M),
-    .MCT      (MCT),
+    .COMPE_m0 (sel ? 1'b0 : COMPE),
+    .FCSN_m0  (sel ? 1'b1 : FCSN),
+    .MODE_m0  (MODE),
+    .FA_m0    (FA),
+    .ADDIN_m0 (ADDIN),
+    .RA_m0    (RA),
+    .WA_m0    (WA),
+    .RCSN_m0  (sel ? 1'b1 : RCSN),
+    .RCSN0_m0 (sel ? 1'b1 : RCSN0),
+    .RCSN1_m0 (sel ? 1'b1 : RCSN1),
+    .RCSN2_m0 (sel ? 1'b1 : RCSN2),
+    .RCSN3_m0 (sel ? 1'b1 : RCSN3),
+    .WCSN_m0  (sel ? 1'b1 : WCSN),
+    .WEN_m0   (sel ? 1'b1 : WEN),
+    .M_m0     (M),
+    .MCT_m0   (MCT),
+    .COMPE_m1 (sel ? COMPE : 1'b0),
+    .FCSN_m1  (sel ? FCSN : 1'b1),
+    .MODE_m1  (MODE),
+    .FA_m1    (FA),
+    .ADDIN_m1 (ADDIN),
+    .RA_m1    (RA),
+    .WA_m1    (WA),
+    .RCSN_m1  (sel ? RCSN : 1'b1),
+    .RCSN0_m1 (sel ? RCSN0 : 1'b1),
+    .RCSN1_m1 (sel ? RCSN1 : 1'b1),
+    .RCSN2_m1 (sel ? RCSN2 : 1'b1),
+    .RCSN3_m1 (sel ? RCSN3 : 1'b1),
+    .WCSN_m1  (sel ? WCSN : 1'b1),
+    .WEN_m1   (sel ? WEN : 1'b1),
+    .M_m1     (M),
+    .MCT_m1   (MCT),
     .READYN   (READYN),
     .PSOUT    (PSOUT),
     .inp_push (inp_push),
@@ -321,12 +337,12 @@ module tb_DIMC_dual;
   endtask
 
   // ---------------------------------------------------------------------------
-  // compute_and_capture_dual 
+  // compute_and_capture_dual
   // ---------------------------------------------------------------------------
   // triggers one MAC on the selected DIMC and captures the Stage 3 result.
   // NOTES:
   //   - The out_fifo receives a copy of the result AUTOMATICALLY
-  //   - out_push goes high at P(N+4) 
+  //   - out_push goes high at P(N+4)
   //   - out_fifo registers the push at P(N+5)
   task automatic compute_and_capture_dual(
     input  [4:0]  row,      
@@ -357,7 +373,7 @@ module tb_DIMC_dual;
       $error("[TB] READYN did not go low after 4-cycle pipeline (row=%0d, sel=%0d)", row, sel);
     psout = PSOUT;
     quant = {i_dut.RES_OUT, i_dut.SOUT};   // pack 4-bit result (internal signals, not ports)
-    // NOTE: 
+    // NOTE:
     // Caller must wait one extra posedge before checking out_empty.
   endtask
 

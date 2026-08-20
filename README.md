@@ -1,5 +1,9 @@
 # dual_DIMC
-Implementation of 2 DIMC macros with double buffering
+Implementation of two independently controlled DIMC macros with shared FIFO
+data paths and double buffering. `clk` and `rst_n` are shared. Every other DIMC
+control input is provided independently using `_m0` and `_m1` ports. `sel` only
+chooses which macro output is forwarded to the output FIFO; it does not gate
+either macro's input controls.
 
 STEPS:
 1. modules load
@@ -14,6 +18,8 @@ make hw-all
 make sim-single
 make sim-dual
 make sim-cleopatra
+make sim-double-buffering
+
 
 4. To use GUI 
 make sim-single GUI=1

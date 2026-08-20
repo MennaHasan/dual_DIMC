@@ -10,6 +10,7 @@ DIMC_STIM_DIR := $(STIM_DIR)/dimc_tests
 CLEO_TEST1_STIM_DIR := $(STIM_DIR)/cleo_test1
 CLEO_TEST2_STIM_DIR := $(STIM_DIR)/cleo_test2
 CLEO_TEST3_STIM_DIR := $(STIM_DIR)/cleo_test3
+DOUBLE_BUFFERING_STIM_DIR := $(STIM_DIR)/double_buffering
 WORK_DIR    := $(SIM_DIR)/work
 COMPILE_TCL := $(SIM_DIR)/compile.tcl
 
@@ -18,7 +19,7 @@ BENDER_VERSION := 0.31.0
 BENDER         := $(SIM_DIR)/bender
 
 # ── Default target ────────────────────────────────────────────
-.PHONY: hw-all stim update-ips hw-compile sim-dual sim-single sim-datapath sim-cleopatra hw-clean
+.PHONY: hw-all stim update-ips hw-compile sim-dual sim-double-buffering sim-single sim-datapath sim-cleopatra hw-clean
 
 hw-all: stim hw-compile
 
@@ -47,6 +48,7 @@ update-ips: $(BENDER)
 stim:
 	python3 $(STIM_DIR)/generate_stim.py --outdir $(STIM_DIR)
 	python3 $(STIM_DIR)/cleo_test3_stim.py
+	python3 $(STIM_DIR)/double_buffering_stim.py
 
 # ── Compile RTL + TBs ─────────────────────────────────────────
 hw-compile: update-ips
@@ -73,6 +75,11 @@ endif
 sim-dual: stim hw-compile
 	vsim $(VSIM_FLAGS) -l $(SIM_DIR)/transcript -lib $(WORK_DIR) tb_DIMC_dual -do $(VSIM_DO)
 
+sim-double-buffering: stim hw-compile
+	rm -f $(DOUBLE_BUFFERING_STIM_DIR)/double_buffering_accumulator_output.txt
+	rm -f $(DOUBLE_BUFFERING_STIM_DIR)/double_buffering_final_matmul_output.txt
+	vsim $(VSIM_FLAGS) -l $(SIM_DIR)/transcript -lib $(WORK_DIR) tb_double_buffering -do $(VSIM_DO)
+
 sim-single: stim hw-compile
 	vsim $(VSIM_FLAGS) -l $(SIM_DIR)/transcript -lib $(WORK_DIR) tb_DIMC -do $(VSIM_DO)
 
@@ -96,4 +103,5 @@ hw-clean:
 	rm -f  $(CLEO_TEST1_STIM_DIR)/*.txt
 	rm -f  $(CLEO_TEST2_STIM_DIR)/*.txt
 	rm -f  $(CLEO_TEST3_STIM_DIR)/*.txt
+	rm -f  $(DOUBLE_BUFFERING_STIM_DIR)/*.txt
 	rm -f  etch*

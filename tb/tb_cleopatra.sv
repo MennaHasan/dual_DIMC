@@ -52,12 +52,14 @@ module tb_cleopatra;
   
   localparam int TEST3_NUM_WEIGHT_TILES = TEST3_K * TEST3_L;
   localparam int TEST3_WEIGHT_TILE_BITS = 32 * TEST3_M * TEST3_N;
+
   localparam int TEST3_NUM_INPUT_TILES = TEST3_L * TEST3_Q;
-  localparam int TEST3_OUTPUT_ELEMENTS = TEST3_K * TEST3_M * TEST3_Q * TEST3_P;
   localparam int TEST3_INPUT_TILE_BITS = 32 * TEST3_N * TEST3_P;
+  
+  localparam int TEST3_OUTPUT_ELEMENTS = TEST3_K * TEST3_M * TEST3_Q * TEST3_P;
   localparam int TEST3_FEATURE_BITS = 32 * TEST3_N;
-  localparam int TEST3_FEATURE_SECTIONS =
-      TEST3_FEATURE_BITS / SECTION_WIDTH;
+  localparam int TEST3_FEATURE_SECTIONS = TEST3_FEATURE_BITS / SECTION_WIDTH;
+
 
   // One packed value represents one complete matrix tile. Kernel tiles are
   // row-major; input tiles are column-major so each feature is contiguous.
@@ -148,22 +150,38 @@ module tb_cleopatra;
     .clk          (clk),
     .rst_n        (rst_n),
     .sel          (sel),
-    .COMPE        (COMPE),
-    .FCSN         (FCSN),
-    .MODE         (MODE),
-    .FA           (FA),
-    .ADDIN        (ADDIN),
-    .RA           (RA),
-    .WA           (WA),
-    .RCSN         (RCSN),
-    .RCSN0        (RCSN0),
-    .RCSN1        (RCSN1),
-    .RCSN2        (RCSN2),
-    .RCSN3        (RCSN3),
-    .WCSN         (WCSN),
-    .WEN          (WEN),
-    .M            (M),
-    .MCT          (MCT),
+    .COMPE_m0     (sel ? 1'b0 : COMPE),
+    .FCSN_m0      (sel ? 1'b1 : FCSN),
+    .MODE_m0      (MODE),
+    .FA_m0        (FA),
+    .ADDIN_m0     (ADDIN),
+    .RA_m0        (RA),
+    .WA_m0        (WA),
+    .RCSN_m0      (sel ? 1'b1 : RCSN),
+    .RCSN0_m0     (sel ? 1'b1 : RCSN0),
+    .RCSN1_m0     (sel ? 1'b1 : RCSN1),
+    .RCSN2_m0     (sel ? 1'b1 : RCSN2),
+    .RCSN3_m0     (sel ? 1'b1 : RCSN3),
+    .WCSN_m0      (sel ? 1'b1 : WCSN),
+    .WEN_m0       (sel ? 1'b1 : WEN),
+    .M_m0         (M),
+    .MCT_m0       (MCT),
+    .COMPE_m1     (sel ? COMPE : 1'b0),
+    .FCSN_m1      (sel ? FCSN : 1'b1),
+    .MODE_m1      (MODE),
+    .FA_m1        (FA),
+    .ADDIN_m1     (ADDIN),
+    .RA_m1        (RA),
+    .WA_m1        (WA),
+    .RCSN_m1      (sel ? RCSN : 1'b1),
+    .RCSN0_m1     (sel ? RCSN0 : 1'b1),
+    .RCSN1_m1     (sel ? RCSN1 : 1'b1),
+    .RCSN2_m1     (sel ? RCSN2 : 1'b1),
+    .RCSN3_m1     (sel ? RCSN3 : 1'b1),
+    .WCSN_m1      (sel ? WCSN : 1'b1),
+    .WEN_m1       (sel ? WEN : 1'b1),
+    .M_m1         (M),
+    .MCT_m1       (MCT),
     .inp_push     (inp_push),
     .inp_data     (inp_data),
     .wgt_push     (wgt_push),

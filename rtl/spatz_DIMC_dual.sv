@@ -10,23 +10,20 @@
 //      inp_fifo (Input/Feature FIFO, depth=8):
 //      out_fifo (Output FIFO, depth=64):
 // ============================================================
-// SEL MUX
+// INDEPENDENT CONTROL / OUTPUT SELECT
 // ============================================================
-// sel routes the active-low enables (COMPE, FCSN, RCSN*, WCSN, WEN) to only
-// the selected macro; the idle macro's enables are deasserted.
-// Data buses (D, FD, RA, WA, MODE, ADDIN, FA, M, MCT) are shared: both macros
-// receive the same values simultaneously.  Only the enables determine which
-// macro actually performs an operation.
-//   sel=0 → enables go to u_mac0; u_mac1 idles (enables deasserted)
-//   sel=1 → enables go to u_mac1; u_mac0 idles (enables deasserted)
+// Each macro has an independent set of control inputs. clk and rst_n are the
+// only shared control signals. sel does not gate commands; it only chooses the
+// macro whose outputs are forwarded to the wrapper and output FIFO.
 //
 // ============================================================
 // DATA PATHS
 // ============================================================
-// D  (kernel write data):  wgt_fifo.data_out → both macros (only selected one writes)
-// FD (feature data):       inp_fifo.data_out → both macros (only selected one loads)
-// 24-bit psum (PSOUT):     selected macro → sign-extended to 32 bits →
-//                          out_fifo (auto-push on READYN=0)
+// D  (kernel write data):  wgt_fifo.data_out → both macros; each macro's
+//                          independent WCSN/WEN controls whether it writes.
+// FD (feature data):       inp_fifo.data_out → both macros; each macro's
+//                          independent FCSN controls whether it loads.
+// 24-bit psum (PSOUT):     sel-selected macro → out_fifo.
 //
 
 `timescale 1ns/1ps
@@ -48,21 +45,27 @@ module spatz_DIMC_dual #(
     // sel: DIMC selector
     input  logic sel,
 
-    // Control inputs 
-    // The always_comb mux routes them to only the selected DIMC.
-    input  logic                     COMPE,         
-    input  logic                     FCSN,          
-    input  logic [1:0]               MODE,          
-    input  logic [1:0]               FA,            
-    input  logic [23:0]              ADDIN,         
-    input  logic [6:0]               RA,            
-    input  logic [6:0]               WA,            
-    input  logic                     RCSN,          
-    input  logic                     RCSN0, RCSN1, RCSN2, RCSN3,  
-    input  logic                     WCSN,          
-    input  logic                     WEN,           
-    input  logic [SECTION_WIDTH-1:0] M,
-    input  logic [7:0]               MCT,
+    // Independent DIMC 0 control inputs
+    input  logic                     COMPE_m0, FCSN_m0,
+    input  logic [1:0]               MODE_m0, FA_m0,
+    input  logic [23:0]              ADDIN_m0,
+    input  logic [6:0]               RA_m0, WA_m0,
+    input  logic                     RCSN_m0,
+    input  logic                     RCSN0_m0, RCSN1_m0, RCSN2_m0, RCSN3_m0,
+    input  logic                     WCSN_m0, WEN_m0,
+    input  logic [SECTION_WIDTH-1:0] M_m0,
+    input  logic [7:0]               MCT_m0,
+
+    // Independent DIMC 1 control inputs
+    input  logic                     COMPE_m1, FCSN_m1,
+    input  logic [1:0]               MODE_m1, FA_m1,
+    input  logic [23:0]              ADDIN_m1,
+    input  logic [6:0]               RA_m1, WA_m1,
+    input  logic                     RCSN_m1,
+    input  logic                     RCSN0_m1, RCSN1_m1, RCSN2_m1, RCSN3_m1,
+    input  logic                     WCSN_m1, WEN_m1,
+    input  logic [SECTION_WIDTH-1:0] M_m1,
+    input  logic [7:0]               MCT_m1,
 
     // Outputs — muxed from the CURRENTLY SELECTED DIMC.
     output logic                     READYN,
@@ -160,21 +163,9 @@ module spatz_DIMC_dual #(
     );
 
     // =========================================================================
-    // Per-macro enable signals (sel-gated)
+    // Per-macro outputs
     // =========================================================================
-    // Only the enables are per-DIMC — sel routes them to one macro at a time.
-    // Data buses (D, FD, RA, WA, MODE, ADDIN, FA, M, MCT) are shared and wired
-    // directly to both macro instantiations below.
-
-    logic [1:0] m_compe;   
-    logic [1:0] m_fcsn;    
-    logic [1:0] m_rcsn;    
-    logic [1:0] m_rcsn0;   
-    logic [1:0] m_rcsn1;   
-    logic [1:0] m_rcsn2;   
-    logic [1:0] m_rcsn3;   
-    logic [1:0] m_wcsn;    
-    logic [1:0] m_wen;     
+    // Control inputs are independent. FIFO-provided D and FD remain shared.
 
     logic [1:0]      m_readyn;
     logic [1:0]      m_sout;
@@ -189,110 +180,83 @@ module spatz_DIMC_dual #(
     // =========================================================================
     // DIMC macro 0 instantiation
     // =========================================================================
-    // Enables (COMPE, FCSN, RCSN*, WCSN, WEN) are sel-gated via m_*[0].
-    // Data buses (D, FD, RA, WA, MODE, ADDIN, FA, M, MCT) are shared with mac1.
+    // DIMC 0 is driven directly by the _m0 control-input set.
     spatz_DIMC #(.SECTION_WIDTH(SECTION_WIDTH)) u_mac0 (
         .RCK     (clk),
         .RESETn  (rst_n),
-        .COMPE   (m_compe[0]),
+        .COMPE   (COMPE_m0),
         .READYN  (m_readyn[0]),
-        .FCSN    (m_fcsn[0]),
-        .MODE    (MODE),
-        .FA      (FA),
+        .FCSN    (FCSN_m0),
+        .MODE    (MODE_m0),
+        .FA      (FA_m0),
         .FD      (inp_rdata),
-        .ADDIN   (ADDIN),
+        .ADDIN   (ADDIN_m0),
         .SOUT    (m_sout[0]),
         .RES_OUT (m_res_out[0]),
         .PSOUT   (m_psout[0]),
         .Q       (m_q[0]),
         .D       (wgt_rdata),
-        .RA      (RA),
-        .WA      (WA),
-        .RCSN    (m_rcsn[0]),
-        .RCSN0   (m_rcsn0[0]),
-        .RCSN1   (m_rcsn1[0]),
-        .RCSN2   (m_rcsn2[0]),
-        .RCSN3   (m_rcsn3[0]),
+        .RA      (RA_m0),
+        .WA      (WA_m0),
+        .RCSN    (RCSN_m0),
+        .RCSN0   (RCSN0_m0),
+        .RCSN1   (RCSN1_m0),
+        .RCSN2   (RCSN2_m0),
+        .RCSN3   (RCSN3_m0),
         .WCK     (clk),
-        .WCSN    (m_wcsn[0]),
-        .WEN     (m_wen[0]),
-        .M       (M),
-        .MCT     (MCT)
+        .WCSN    (WCSN_m0),
+        .WEN     (WEN_m0),
+        .M       (M_m0),
+        .MCT     (MCT_m0)
     );
 
     // =========================================================================
     // DIMC macro 1 instantiation
     // =========================================================================
-    // Enables (COMPE, FCSN, RCSN*, WCSN, WEN) are sel-gated via m_*[1].
-    // Data buses are identical to mac0 — both see the same shared inputs.
+    // DIMC 1 is driven directly by the _m1 control-input set.
     spatz_DIMC #(.SECTION_WIDTH(SECTION_WIDTH)) u_mac1 (
         .RCK     (clk),
         .RESETn  (rst_n),
-        .COMPE   (m_compe[1]),
+        .COMPE   (COMPE_m1),
         .READYN  (m_readyn[1]),
-        .FCSN    (m_fcsn[1]),
-        .MODE    (MODE),
-        .FA      (FA),
+        .FCSN    (FCSN_m1),
+        .MODE    (MODE_m1),
+        .FA      (FA_m1),
         .FD      (inp_rdata),
-        .ADDIN   (ADDIN),
+        .ADDIN   (ADDIN_m1),
         .SOUT    (m_sout[1]),
         .RES_OUT (m_res_out[1]),
         .PSOUT   (m_psout[1]),
         .Q       (m_q[1]),
         .D       (wgt_rdata),
-        .RA      (RA),
-        .WA      (WA),
-        .RCSN    (m_rcsn[1]),
-        .RCSN0   (m_rcsn0[1]),
-        .RCSN1   (m_rcsn1[1]),
-        .RCSN2   (m_rcsn2[1]),
-        .RCSN3   (m_rcsn3[1]),
+        .RA      (RA_m1),
+        .WA      (WA_m1),
+        .RCSN    (RCSN_m1),
+        .RCSN0   (RCSN0_m1),
+        .RCSN1   (RCSN1_m1),
+        .RCSN2   (RCSN2_m1),
+        .RCSN3   (RCSN3_m1),
         .WCK     (clk),
-        .WCSN    (m_wcsn[1]),
-        .WEN     (m_wen[1]),
-        .M       (M),
-        .MCT     (MCT)
+        .WCSN    (WCSN_m1),
+        .WEN     (WEN_m1),
+        .M       (M_m1),
+        .MCT     (MCT_m1)
     );
 
     // =========================================================================
-    // ENABLE MUX + FIFO AUTO-MANAGEMENT (combinational)
+    // OUTPUT MUX + FIFO AUTO-MANAGEMENT (combinational)
     // =========================================================================
-    // TASK 1 — enable mux:
-    //   Default: deassert all enables for both macros so neither fires.
-    //   Then:   forward the external enables to only the selected macro.
+    // sel only selects outputs. Both macros always receive their own controls.
+    // wgt_pop fires when either macro requests a write; simultaneous writes
+    // consume one shared FIFO word and present it to both macros.
     //
-    // TASK 2 — FIFO auto-management:
-    //   wgt_pop:  Fires whenever a kernel write is triggered (WCSN=0 & WEN=0).
-    //
-    //   inp_pop:  Fires each cycle FCSN=0 is asserted (one pop per feature section).
+    // inp_pop fires when either macro requests a feature load.
     //
     //   out_push: Fires when the selected DIMC's READYN goes low (pipeline done).
     //
     //   NOTE: The FIFO registers the push at P(N+5).  Testbench must wait 1 extra cycle.
     // =========================================================================
     always_comb begin
-        // --- Defaults: deassert all enables for both macros ---
-        m_compe = 2'b00;  // COMPE active-HIGH: deassert both
-        m_fcsn  = 2'b11;  // FCSN  active-LOW:  1 = idle
-        m_rcsn  = 2'b11;  // RCSN  active-LOW:  1 = idle
-        m_rcsn0 = 2'b11;
-        m_rcsn1 = 2'b11;
-        m_rcsn2 = 2'b11;
-        m_rcsn3 = 2'b11;
-        m_wcsn  = 2'b11;  // WCSN  active-LOW:  1 = idle
-        m_wen   = 2'b11;  // WEN   active-LOW:  1 = idle
-
-        // --- Forward enables to the selected macro only ---
-        m_compe[sel]  = COMPE;
-        m_fcsn[sel]   = FCSN;
-        m_rcsn[sel]   = RCSN;
-        m_rcsn0[sel]  = RCSN0;
-        m_rcsn1[sel]  = RCSN1;
-        m_rcsn2[sel]  = RCSN2;
-        m_rcsn3[sel]  = RCSN3;
-        m_wcsn[sel]   = WCSN;
-        m_wen[sel]    = WEN;
-
         // --- Output mux: expose selected macro's outputs (READYN/PSOUT as
         // ports; Q/SOUT/RES_OUT as internal signals only) ---
         READYN  = m_readyn[sel];
@@ -302,8 +266,8 @@ module spatz_DIMC_dual #(
         PSOUT   = m_psout[sel];
 
         // --- FIFO auto-management ---
-        wgt_pop  = ~WCSN & ~WEN & ~wgt_empty;
-        inp_pop  = ~FCSN & ~inp_empty;
+        wgt_pop  = ((~WCSN_m0 & ~WEN_m0) | (~WCSN_m1 & ~WEN_m1)) & ~wgt_empty;
+        inp_pop  = ((~FCSN_m0) | (~FCSN_m1)) & ~inp_empty;
         out_push  = ~READYN & ~out_full;
         out_wdata = PSOUT;
     end

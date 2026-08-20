@@ -1,0 +1,93 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="920" viewBox="0 0 1600 920">
+  <defs>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M0,0 L12,6 L0,12 Z" fill="#243447"/>
+    </marker>
+    <style>
+      .title { font: 700 34px sans-serif; fill: #152238; }
+      .state-title { font: 700 21px sans-serif; fill: #152238; text-anchor: middle; }
+      .state-text { font: 16px sans-serif; fill: #30445c; text-anchor: middle; }
+      .edge { fill: none; stroke: #243447; stroke-width: 3; marker-end: url(#arrow); }
+      .edge-label { font: 700 16px sans-serif; fill: #152238; text-anchor: middle; }
+      .counter { font: 15px monospace; fill: #6b3fa0; text-anchor: middle; }
+      .normal { fill: #eaf3ff; stroke: #3273b8; stroke-width: 3; }
+      .alternating { fill: #e9f8ef; stroke: #27864c; stroke-width: 3; }
+      .terminal { fill: #fff1df; stroke: #d17416; stroke-width: 3; }
+      .reset { fill: #f0eafd; stroke: #7651b5; stroke-width: 3; }
+      .finish { fill: #f6e9ec; stroke: #9d4051; stroke-width: 4; }
+    </style>
+  </defs>
+
+  <rect width="1600" height="920" fill="#f7f9fc"/>
+  <text x="800" y="55" class="title" text-anchor="middle">Double-Buffering MatMul FSM</text>
+
+  <!-- Reset and initial load -->
+  <ellipse cx="175" cy="180" rx="125" ry="68" class="reset"/>
+  <text x="175" y="169" class="state-title">RESET</text>
+  <text x="175" y="200" class="counter">MATMUL_Requested = 0</text>
+
+  <rect x="365" y="105" width="300" height="150" rx="28" class="normal"/>
+  <text x="515" y="151" class="state-title">STATE 1</text>
+  <text x="515" y="183" class="state-text">Load Macro 0</text>
+  <text x="515" y="208" class="state-text">Macro 1 idle</text>
+  <text x="515" y="235" class="counter">MATMUL_Requested++</text>
+
+  <!-- Alternating states -->
+  <rect x="715" y="105" width="340" height="150" rx="28" class="alternating"/>
+  <text x="885" y="151" class="state-title">STATE 2</text>
+  <text x="885" y="183" class="state-text">Compute Macro 0</text>
+  <text x="885" y="208" class="state-text">Load Macro 1</text>
+  <text x="885" y="235" class="counter">MATMUL_Requested++</text>
+
+  <rect x="715" y="445" width="340" height="150" rx="28" class="alternating"/>
+  <text x="885" y="491" class="state-title">STATE 3</text>
+  <text x="885" y="523" class="state-text">Compute Macro 1</text>
+  <text x="885" y="548" class="state-text">Load Macro 0</text>
+  <text x="885" y="575" class="counter">MATMUL_Requested++</text>
+
+  <!-- Terminal compute states -->
+  <rect x="1190" y="445" width="320" height="150" rx="28" class="terminal"/>
+  <text x="1350" y="491" class="state-title">STATE 4 — END</text>
+  <text x="1350" y="527" class="state-text">Compute Macro 0</text>
+  <text x="1350" y="554" class="state-text">Verify final results</text>
+
+  <rect x="1190" y="105" width="320" height="150" rx="28" class="terminal"/>
+  <text x="1350" y="151" class="state-title">STATE 5 — END</text>
+  <text x="1350" y="187" class="state-text">Compute Macro 1</text>
+  <text x="1350" y="214" class="state-text">Verify final results</text>
+
+  <ellipse cx="1350" cy="770" rx="145" ry="68" class="finish"/>
+  <text x="1350" y="759" class="state-title">FINISH</text>
+  <text x="1350" y="790" class="state-text">Report PASS / FAIL</text>
+
+  <!-- Main transitions -->
+  <path d="M300 180 L355 180" class="edge"/>
+  <path d="M665 180 L705 180" class="edge"/>
+  <text x="685" y="155" class="edge-label">count &lt; target</text>
+
+  <path d="M885 255 L885 435" class="edge"/>
+  <text x="980" y="352" class="edge-label">count &lt; target</text>
+
+  <path d="M715 520 C600 520 600 290 715 205" class="edge"/>
+  <text x="575" y="380" class="edge-label">count &lt; target</text>
+
+  <!-- Terminal branches -->
+  <path d="M515 255 C515 690 1125 690 1190 560" class="edge"/>
+  <text x="695" y="675" class="edge-label">count ≥ target</text>
+
+  <path d="M1055 180 L1180 180" class="edge"/>
+  <text x="1118" y="155" class="edge-label">count ≥ target</text>
+
+  <path d="M1055 520 L1180 520" class="edge"/>
+  <text x="1118" y="495" class="edge-label">count ≥ target</text>
+
+  <!-- Finish transitions -->
+  <path d="M1350 595 L1350 692" class="edge"/>
+  <path d="M1510 180 C1570 180 1570 770 1505 770" class="edge"/>
+
+  <!-- Legend -->
+  <rect x="70" y="750" width="910" height="115" rx="18" fill="#ffffff" stroke="#ccd6e2" stroke-width="2"/>
+  <text x="95" y="784" style="font:700 17px sans-serif;fill:#152238">Transition condition</text>
+  <text x="95" y="817" style="font:16px sans-serif;fill:#30445c">count = MATMUL_Requested after the state increments it</text>
+  <text x="95" y="845" style="font:16px sans-serif;fill:#30445c">target = MATMUL_to_request = K × Q × L</text>
+</svg>
