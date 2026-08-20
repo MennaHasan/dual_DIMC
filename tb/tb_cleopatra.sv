@@ -24,9 +24,9 @@ module tb_cleopatra;
 //Full matrix dimensions, made multiples of DIMC dimensions for now
 //should match the values in the cleo_test3_stim.py file
 
-  localparam int TEST3_K              = 3;
-  localparam int TEST3_L              = 2;
-  localparam int TEST3_Q              = 4;
+  localparam int TEST3_K              = 4;
+  localparam int TEST3_L              = 3;
+  localparam int TEST3_Q              = 2;
 
 
 
@@ -104,6 +104,8 @@ module tb_cleopatra;
   // Clock and reset
   logic clk;
   logic rst_n;
+  logic count_test3_cycles = 1'b0;
+  longint unsigned test3_cycle_count = 0;
 
   // sel: 0 = u_mac0  1 = u_mac1 (inside spatz_DIMC_dual)
   logic sel = 1'b0;
@@ -194,6 +196,11 @@ module tb_cleopatra;
   initial begin
     clk = 1'b0;
     forever #(ClkPeriod/2) clk = ~clk;
+  end
+
+  always @(posedge clk) begin
+    if (count_test3_cycles)
+      test3_cycle_count <= test3_cycle_count + 1;
   end
 
   // RESET GENERATION
@@ -445,6 +452,8 @@ module tb_cleopatra;
       automatic int accumulator_file;
       automatic int python_status;
 
+      test3_cycle_count = 0;
+      count_test3_cycles = 1'b1;
       clear_accumulators();
 
       // Each file token is one complete M-by-N kernel tile.
@@ -512,6 +521,8 @@ module tb_cleopatra;
         end
       end
       $fclose(accumulator_file);
+      count_test3_cycles = 1'b0;
+      $display("[TB] Test 3 completed in %0d clock cycles", test3_cycle_count);
 
       python_status = $system(
           "python3 stimuli/matrix_untiling.py"

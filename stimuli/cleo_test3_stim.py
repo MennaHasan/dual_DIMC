@@ -8,9 +8,9 @@ from typing import Dict, List, Tuple
 ############### SET ###############
 # ints that define Full matrix dimensions
 # should match the values in the tb_cleoatra
-K = 3
-L = 2
-Q = 4
+K = 4
+L = 3
+Q = 2
 
 
 # matrices dimensions in DIMC 

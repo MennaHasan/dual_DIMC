@@ -35,9 +35,9 @@ module tb_double_buffering;
   // Full matrix dimensions match the tiled Cleopatra Test 3 convention:
   //   weights = (K*M) x (L*N_ELEMENTS)
   //   inputs  = (L*N_ELEMENTS) x (Q*P)
-  localparam int DB_K = 6;
+  localparam int DB_K = 4;
   localparam int DB_L = 3;
-  localparam int DB_Q = 5;
+  localparam int DB_Q = 2;
 
 // these shouldn't change
   localparam int DB_M = NB_KERNEL_ROWS;
@@ -94,6 +94,7 @@ module tb_double_buffering;
   logic rst_n = 1'b0;
   logic count_test_cycles = 1'b0;
   longint unsigned test_cycle_count = 0;
+  longint unsigned result_pop_count = 0;
 
   logic sel = 1'b0;
 
@@ -151,6 +152,7 @@ module tb_double_buffering;
   int unsigned MATMUL_Requested = 0;
   int unsigned MATMUL_to_request = DB_Q * DB_K * DB_L;
   int MATMUL_Computed = 0;
+  longint unsigned MATMUL_Computed_Total = 0;
   int unsigned k, l, q, p;
 
   cleopatra #(
@@ -174,6 +176,10 @@ module tb_double_buffering;
   always @(posedge clk) begin
     if (count_test_cycles)
       test_cycle_count <= test_cycle_count + 1;
+    if (!rst_n)
+      result_pop_count <= 0;
+    else if (i_dut.out_pop)
+      result_pop_count <= result_pop_count + 1;
   end
 
 
@@ -187,7 +193,6 @@ module tb_double_buffering;
     // putting kernel into kernel_sections
     logic [SECTION_WIDTH-1:0] kernel_sections
         [0:NB_KERNEL_ROWS*4-1];
-
     // Macro 1 must not consume either shared FIFO while macro 0 is loaded.
     COMPE_m1 = 1'b0;
     FCSN_m1  = 1'b1;
@@ -211,7 +216,6 @@ module tb_double_buffering;
 
     // Queue all P=8 feature vectors while both macros leave the input FIFO idle.
     FCSN_m0 = 1'b1;
-    @(posedge clk); #ApplTime;
     inp_push = 1'b1;
     inp_data = features[0][0];
 
@@ -241,8 +245,7 @@ module tb_double_buffering;
 
 
     // loading kernel for macro 0
-    // Cycle 1 (alignment): nothing pushed yet; set up section 0's push.
-    @(posedge clk); #ApplTime;
+    // Set up section 0 before the next edge; no alignment cycle is needed.
     COMPE_m0 = 1'b0; RCSN_m0 = 1'b1; FCSN_m0 = 1'b1; M_m0 = '1;
     WCSN_m0  = 1'b1; WEN_m0  = 1'b1;
     wgt_push = 1'b1; wgt_data = kernel_sections[0];
@@ -275,6 +278,8 @@ module tb_double_buffering;
     // putting kernel into kernel_sections
     logic [SECTION_WIDTH-1:0] kernel_sections
         [0:NB_KERNEL_ROWS*4-1];
+    logic last_vector_loaded_m0;
+    longint unsigned expected_result_count;
 
     // unpacking kernel into sections for writing to macro 0
     for (int section = 0; section < NB_KERNEL_ROWS*4; section++) begin
@@ -286,6 +291,8 @@ module tb_double_buffering;
     end
 
     sel = 1'b0;
+    last_vector_loaded_m0 = (DB_P == 1);
+    expected_result_count = result_pop_count + DB_M*DB_P;
 
     fork
       begin : compute_current_tile_on_m0
@@ -303,7 +310,6 @@ module tb_double_buffering;
           COMPE_m0 = 1'b0;
           RCSN_m0 = 1'b1; RCSN0_m0 = 1'b1; RCSN1_m0 = 1'b1;
           RCSN2_m0 = 1'b1; RCSN3_m0 = 1'b1;
-          @(posedge clk); #TestTime;
 
           if (vector_index < DB_P-1) begin
             FCSN_m0 = 1'b0;
@@ -317,6 +323,8 @@ module tb_double_buffering;
                 FA_m0 = '0;
               end
             end
+            if (vector_index == DB_P-2)
+              last_vector_loaded_m0 = 1'b1;
           end
         end
       end
@@ -337,12 +345,26 @@ module tb_double_buffering;
           @(posedge clk); #ApplTime;
           inp_push = 1'b0;
         end
+
+        // Once macro 0 has loaded its last vector, the FIFO head belongs to
+        // macro 1. Load macro 1's first vector during macro 0's final compute.
+        wait (last_vector_loaded_m0);
+        FCSN_m1 = 1'b0;
+        FA_m1 = 2'd0;
+        for (int section = 0; section < NUM_SECTIONS; section++) begin
+          @(posedge clk); #ApplTime;
+          if (section < NUM_SECTIONS-1)
+            FA_m1 = 2'(section+1);
+          else begin
+            FCSN_m1 = 1'b1;
+            FA_m1 = '0;
+          end
+        end
       end
 
       begin : load_next_kernel_into_m1
         COMPE_m1 = 1'b0; RCSN_m1 = 1'b1; FCSN_m1 = 1'b1; M_m1 = '1;
         WCSN_m1 = 1'b1; WEN_m1 = 1'b1;
-        @(posedge clk); #ApplTime;
         wgt_push = 1'b1; wgt_data = kernel_sections[0];
 
         for (int i = 0; i < NB_SECTIONS; i++) begin
@@ -360,19 +382,9 @@ module tb_double_buffering;
       end
     join
 
-    // Macro 0 has finished, so macro 1 can safely consume the FIFO head.
-    FCSN_m0 = 1'b1;
-    FCSN_m1 = 1'b0;
-    FA_m1 = 2'd0;
-    for (int section = 0; section < NUM_SECTIONS; section++) begin
-      @(posedge clk); #ApplTime;
-      if (section < NUM_SECTIONS-1)
-        FA_m1 = 2'(section+1);
-      else begin
-        FCSN_m1 = 1'b1;
-        FA_m1 = '0;
-      end
-    end
+    // Keep sel on macro 0 until every issued result has been captured.
+    wait (result_pop_count >= expected_result_count);
+    #TestTime;
 
   endtask
 
@@ -383,6 +395,8 @@ module tb_double_buffering;
     int NB_SECTIONS = NB_KERNEL_ROWS*4;
     logic [SECTION_WIDTH-1:0] kernel_sections
         [0:NB_KERNEL_ROWS*4-1];
+    logic last_vector_loaded_m1;
+    longint unsigned expected_result_count;
 
     for (int section = 0; section < NB_KERNEL_ROWS*4; section++) begin
       kernel_sections[section] =
@@ -393,6 +407,8 @@ module tb_double_buffering;
     end
 
     sel = 1'b1;
+    last_vector_loaded_m1 = (DB_P == 1);
+    expected_result_count = result_pop_count + DB_M*DB_P;
 
     fork
       begin : compute_current_tile_on_m1
@@ -409,7 +425,6 @@ module tb_double_buffering;
           COMPE_m1 = 1'b0;
           RCSN_m1 = 1'b1; RCSN0_m1 = 1'b1; RCSN1_m1 = 1'b1;
           RCSN2_m1 = 1'b1; RCSN3_m1 = 1'b1;
-          @(posedge clk); #TestTime;
 
           if (vector_index < DB_P-1) begin
             FCSN_m1 = 1'b0;
@@ -423,6 +438,8 @@ module tb_double_buffering;
                 FA_m1 = '0;
               end
             end
+            if (vector_index == DB_P-2)
+              last_vector_loaded_m1 = 1'b1;
           end
         end
       end
@@ -441,12 +458,24 @@ module tb_double_buffering;
           @(posedge clk); #ApplTime;
           inp_push = 1'b0;
         end
+
+        wait (last_vector_loaded_m1);
+        FCSN_m0 = 1'b0;
+        FA_m0 = 2'd0;
+        for (int section = 0; section < NUM_SECTIONS; section++) begin
+          @(posedge clk); #ApplTime;
+          if (section < NUM_SECTIONS-1)
+            FA_m0 = 2'(section+1);
+          else begin
+            FCSN_m0 = 1'b1;
+            FA_m0 = '0;
+          end
+        end
       end
 
       begin : load_next_kernel_into_m0
         COMPE_m0 = 1'b0; RCSN_m0 = 1'b1; FCSN_m0 = 1'b1; M_m0 = '1;
         WCSN_m0 = 1'b1; WEN_m0 = 1'b1;
-        @(posedge clk); #ApplTime;
         wgt_push = 1'b1; wgt_data = kernel_sections[0];
 
         for (int i = 0; i < NB_SECTIONS; i++) begin
@@ -464,18 +493,10 @@ module tb_double_buffering;
       end
     join
 
-    FCSN_m1 = 1'b1;
-    FCSN_m0 = 1'b0;
-    FA_m0 = 2'd0;
-    for (int section = 0; section < NUM_SECTIONS; section++) begin
-      @(posedge clk); #ApplTime;
-      if (section < NUM_SECTIONS-1)
-        FA_m0 = 2'(section+1);
-      else begin
-        FCSN_m0 = 1'b1;
-        FA_m0 = '0;
-      end
-    end
+    // Keep sel on macro 1 until every issued result has been captured.
+    wait (result_pop_count >= expected_result_count);
+    #TestTime;
+
   endtask
 
 
@@ -509,7 +530,6 @@ module tb_double_buffering;
       COMPE_m0 = 1'b0;
       RCSN_m0  = 1'b1; RCSN0_m0 = 1'b1; RCSN1_m0 = 1'b1;
       RCSN2_m0 = 1'b1; RCSN3_m0 = 1'b1;
-      @(posedge clk); #TestTime;
 
       if (vector_index < DB_P-1) begin
         // FCSN_m0 makes the DUT pop one FIFO section per clock edge.
@@ -560,7 +580,6 @@ module tb_double_buffering;
       COMPE_m1 = 1'b0;
       RCSN_m1  = 1'b1; RCSN0_m1 = 1'b1; RCSN1_m1 = 1'b1;
       RCSN2_m1 = 1'b1; RCSN3_m1 = 1'b1;
-      @(posedge clk); #TestTime;
 
       if (vector_index < DB_P-1) begin
         // FCSN_m1 makes the DUT pop one FIFO section per clock edge.
@@ -581,18 +600,12 @@ module tb_double_buffering;
   endtask
   
   task automatic clear_accumulators;
-    @(posedge clk); #ApplTime;
     clear = 1'b1;
     @(posedge clk); #ApplTime;
     clear = 1'b0;
   endtask
 
   task automatic save_accumulator_tile(input int accumulator_file);
-    // Allow the final DIMC results to reach the accumulator before sampling.
-    repeat (5) begin
-      @(posedge clk); #TestTime;
-    end
-
     // File order is row-major; acc_o is arranged as [column*DB_M + row].
     for (int row = 0; row < DB_M; row++) begin
       for (int col = 0; col < DB_P; col++) begin
@@ -607,7 +620,11 @@ module tb_double_buffering;
     inout int MATMUL_Computed
   );
     MATMUL_Computed++;
+    MATMUL_Computed_Total++;
     if (MATMUL_Computed == DB_L) begin
+      // Wait for exactly the results issued so far; avoid a fixed drain stall.
+      wait (result_pop_count >= MATMUL_Computed_Total*DB_M*DB_P);
+      #TestTime;
       save_accumulator_tile(accumulator_file);
       clear_accumulators();
       MATMUL_Computed = 0;
@@ -709,6 +726,7 @@ module tb_double_buffering;
           rst_n = 1'b0;
           MATMUL_Requested = 0;
           MATMUL_Computed = 0;
+          MATMUL_Computed_Total = 0;
           k = 0;
           l = 0; // note: for now l and matmul_requested do the exact same function 
           q = 0;
@@ -720,7 +738,7 @@ module tb_double_buffering;
         end
 
         STATE_1_LOAD_M0: begin
-          $display("[TB_DOUBLE] State 1: load macro 0; macro 1 idle");
+          //$display("[TB_DOUBLE] State 1: load macro 0; macro 1 idle");
           state_1_load_m0_idle_m1(feature_stim[l][q],
                                   kernel_stim[k][l]);
           MATMUL_Requested++;
@@ -734,7 +752,7 @@ module tb_double_buffering;
         end
 
         STATE_2_COMPUTE_M0_LOAD_M1: begin
-          $display("[TB_DOUBLE] State 2: compute macro 0; load macro 1");
+          //$display("[TB_DOUBLE] State 2: compute macro 0; load macro 1");
           state_2_compute_m0_while_loading_m1(feature_stim[l][q],
                                               kernel_stim[k][l]);
           advance_tile_indices();
@@ -747,7 +765,7 @@ module tb_double_buffering;
         end
 
         STATE_3_COMPUTE_M1_LOAD_M0: begin
-          $display("[TB_DOUBLE] State 3: compute macro 1; load macro 0");
+          //$display("[TB_DOUBLE] State 3: compute macro 1; load macro 0");
           state_3_compute_m1_while_loading_m0(feature_stim[l][q],
                                               kernel_stim[k][l]);
           advance_tile_indices();
@@ -760,14 +778,14 @@ module tb_double_buffering;
         end
 
         STATE_4_COMPUTE_M0: begin
-          $display("[TB_DOUBLE] State 4: compute macro 0 and verify");
+          //$display("[TB_DOUBLE] State 4: compute macro 0 and verify");
           state_4_compute_m0_idle_m1();
           finish_l_matmuls(accumulator_file, MATMUL_Computed);
           state = STATE_6_FINISH;
         end
 
         STATE_5_COMPUTE_M1: begin
-          $display("[TB_DOUBLE] State 5: compute macro 1 and verify");
+          //$display("[TB_DOUBLE] State 5: compute macro 1 and verify");
           state_5_compute_m1_idle_m0();
           finish_l_matmuls(accumulator_file, MATMUL_Computed);
           state = STATE_6_FINISH;

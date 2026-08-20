@@ -7,9 +7,9 @@ from pathlib import Path
 from typing import Dict, List, Tuple
 
 # Full-matrix tile counts. Keep these aligned with tb_double_buffering.sv.
-K = 6
+K = 4
 L = 3
-Q = 5
+Q = 2
 
 # DIMC tile dimensions. N is represented here in unsigned 8-bit elements.
 M = 32
