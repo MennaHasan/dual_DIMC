@@ -13,7 +13,7 @@
  * drives dimc_datapath's input_i/kernel_i HWPE-Stream sink ports as a
  * plain valid/ready producer and drains output_o as a plain valid/ready
  * consumer, then checks the results against the SAME golden vectors used
- * by tb_DIMC_dual.sv (stimuli/dimc_tests/golden_psum_24bit.txt), reusing the
+ * by tb_DIMC_dual.sv (stimuli/dimc_tests/golden_psum_32bit.txt), reusing the
  * same kernel/feature stimuli. This proves the bridge + sequencer inside
  * dimc_datapath reproduce spatz_DIMC_dual's known-good behavior (verified
  * directly, in tb_DIMC_dual.sv) when driven purely through HWPE-Stream.
@@ -33,7 +33,7 @@ module tb_dimc_datapath;
 
   parameter KERNEL_WEIGHTS_FILE = "stimuli/dimc_tests/kernel_weights.txt";
   parameter FEATURE_VECTOR_FILE = "stimuli/dimc_tests/feature_vector.txt";
-  parameter GOLDEN_PSOUT_FILE   = "stimuli/dimc_tests/golden_psum_24bit.txt";
+  parameter GOLDEN_PSOUT_FILE   = "stimuli/dimc_tests/golden_psum_32bit.txt";
 
   localparam time ClkPeriod = 10ns;
   localparam time ApplTime  =  2ns;
@@ -43,7 +43,7 @@ module tb_dimc_datapath;
   // -------------------------------------------------------------------------
   logic [SECTION_WIDTH-1:0] kernel_stim  [0 : NB_KERNEL_SECTIONS-1]; // 128 sections
   logic [SECTION_WIDTH-1:0] feature_stim [0 : NUM_SECTIONS-1];       //   4 sections
-  logic [23:0]              golden_psout [0 : NB_KERNEL_ROWS-1];     //  32 psums
+  logic [31:0]              golden_psout [0 : NB_KERNEL_ROWS-1];
 
   // -------------------------------------------------------------------------
   // Clock / reset
@@ -166,7 +166,7 @@ module tb_dimc_datapath;
     @(posedge clk); #ApplTime;
 
     for (int r = 0; r < NB_KERNEL_ROWS; r++) begin
-      automatic logic [31:0] expected32 = { {8{golden_psout[r][23]}}, golden_psout[r] };
+      automatic logic [31:0] expected32 = golden_psout[r];
       automatic logic [31:0] got32      = results[r][31:0];
       automatic logic [SECTION_WIDTH-33:0] got_upper = results[r][SECTION_WIDTH-1:32];
 

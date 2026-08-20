@@ -32,13 +32,14 @@ module dimc_datapath
   logic                     compe, fcsn, rcsn, rcsn0, rcsn1, rcsn2, rcsn3, wcsn, wen;
   logic [1:0]                mode;
   logic [1:0]                fa;
-  logic [23:0]               addin;
+  logic [31:0]               addin;
   logic [6:0]                ra, wa;
   logic [SECTION_WIDTH-1:0]  m_mask;
-  logic [7:0]                mct;
+  logic [9:0]                compute_mask;
+  logic [1:0]                sign_8b;
 
   logic                      readyn;
-  logic [23:0]               psout;
+  logic [31:0]               psout;
 
   logic                      inp_push, inp_full, inp_empty;
   logic [SECTION_WIDTH-1:0]  inp_data;
@@ -47,7 +48,7 @@ module dimc_datapath
   logic [SECTION_WIDTH-1:0]  wgt_data;
 
   logic                      out_pop, out_full, out_empty;
-  logic [23:0]               out_data;
+  logic [31:0]               out_data;
 
   spatz_DIMC_dual #(
     .SECTION_WIDTH  ( SECTION_WIDTH  ),
@@ -73,7 +74,8 @@ module dimc_datapath
     .WCSN_m0    ( wcsn     ),
     .WEN_m0     ( wen      ),
     .M_m0       ( m_mask   ),
-    .MCT_m0     ( mct      ),
+    .compute_mask_m0(compute_mask),
+    .sign_8b_m0 ( sign_8b  ),
     .COMPE_m1   ( 1'b0     ),
     .FCSN_m1    ( 1'b1     ),
     .MODE_m1    ( '0       ),
@@ -89,7 +91,8 @@ module dimc_datapath
     .WCSN_m1    ( 1'b1     ),
     .WEN_m1     ( 1'b1     ),
     .M_m1       ( '1       ),
-    .MCT_m1     ( '0       ),
+    .compute_mask_m1('0    ),
+    .sign_8b_m1 ( 2'b00    ),
     .READYN     ( readyn   ),
     .PSOUT      ( psout    ),
     .inp_push   ( inp_push ),
@@ -123,7 +126,7 @@ module dimc_datapath
   // only once the streamer's Y/output sink actually accepts it.
   assign output_o.valid = ~out_empty;
   assign out_pop         = output_o.valid & output_o.ready;
-  assign output_o.data   = { {(SECTION_WIDTH-24){out_data[23]}}, out_data };
+  assign output_o.data   = { {(SECTION_WIDTH-32){out_data[31]}}, out_data };
   assign output_o.strb   = '1;
 
   // =========================================================================
@@ -202,7 +205,8 @@ module dimc_datapath
     wcsn  = 1'b1;
     wen   = 1'b1;
     m_mask = '1;   // full write mask (MVP default)
-    mct    = 8'd0; // no masking (MVP default)
+    compute_mask = 10'd0; // no masking (MVP default)
+    sign_8b = 2'b00;      // unsigned kernel and feature
 
     case (state_q)
       // Drives one kernel-section write per cycle.

@@ -13,9 +13,9 @@ USAGE
     --outdir Directory to write all six output files (default: stim).
 
 ============================================================
-CHANGING BIAS OR MCT_VALS
+CHANGING BIAS OR COMPUTE_MASK_VALS
 ============================================================
-  1. Edit BIAS / MCT_VALS constants below.
+  1. Edit BIAS / COMPUTE_MASK_VALS constants below.
   2. Update the matching localparams in tb_DIMC.sv.
   3. Re-run this script to regenerate the golden files.
   No simulator recompile is needed — files are loaded at runtime.
@@ -40,9 +40,9 @@ BYTES_PER_ROW     = NUM_SECTIONS * BYTES_PER_SECTION
 
 BIAS = -2_080_000
 
-# MCT_VALS: the six threshold values swept in Test 4.
-MCT_VALS    = [0, 128, 192, 224, 240, 248]
-NB_MCT_VALS = len(MCT_VALS)
+# COMPUTE_MASK_VALS: the six threshold values swept in Test 4.
+COMPUTE_MASK_VALS    = [0, 512, 768, 896, 960, 992]
+NB_COMPUTE_MASK_VALS = len(COMPUTE_MASK_VALS)
 
 # Test 2 MACROS
 TEST2_START = 0
@@ -54,45 +54,30 @@ NUM_STIM_SETS = 8  # has to be the same as value in tb_cleopatra.sv
 # REFERENCE MODEL
 # =========================================================================
 
-def compute_mac(kernel_row: np.ndarray, feature: np.ndarray, mct: int) -> int:
-    valid_bits = 1024 - int(mct) * 4
-    if valid_bits > 1024:   # wrap guard (cannot actually happen for uint8 MCT)
-        valid_bits = 0
+def compute_mac(kernel_row: np.ndarray, feature: np.ndarray, compute_mask: int) -> int:
+    valid_bits = max(0, 1024 - int(compute_mask))
 
     acc = 0
     for i in range(BYTES_PER_ROW):
         # Element i occupies bits [i*8+7 : i*8] of the 1024-bit row vector.
-        # It is active when its LSB position (i*8) falls within the valid window.
-        # Elements beyond valid_bits are treated as 0 (masked out).
-        if i * 8 < valid_bits:
-            acc += int(kernel_row[i]) * int(feature[i])
+        # Preserve any valid low bits in a partially masked boundary byte.
+        bits_left = valid_bits - i * 8
+        if bits_left > 0:
+            byte_mask = (1 << min(8, bits_left)) - 1
+            kernel_value = int(kernel_row[i]) & byte_mask
+            feature_value = int(feature[i]) & byte_mask
+            acc += kernel_value * feature_value
 
     return acc
 
 
-def relu_quant_4bit(val: int) -> int:
-    if val < 0:
-        return 0    # ReLU: any negative value clamps to 0
-    elif val > 15:
-        return 15   # saturation: any value above 15 clamps to maximum
-    else:
-        return val  # already fits in 4 bits
-
-
-def relu_quant_with_bias(mac_val: int, bias: int) -> int:
-    psum = (mac_val + bias) & 0xFFFFFF
-
-    # Check the sign bit (bit 23) in 24-bit two's complement.
-    if psum & 0x800000:
+def clip_with_bias(mac_val: int, bias: int) -> int:
+    psum = (mac_val + bias) & 0xFFFFFFFF
+    if psum & 0x80000000:
         return 0
-
-    # Check saturation: if any bit above bit 3 is set, the value exceeds 15.
-    elif psum >> 4:
-        return 15
-
-    # Value fits in 4 bits: return the lower nibble unchanged.
-    else:
-        return psum & 0xF
+    if psum > 0xFF:
+        return 0xFF
+    return psum
 
 
 def compute_dot_product(kernel_row: np.ndarray, feature_vec: np.ndarray) -> int:
@@ -142,7 +127,7 @@ def main():
     os.makedirs(cleo_test1_dir, exist_ok=True)
     os.makedirs(cleo_test2_dir, exist_ok=True)
 
-    
+
     # GENERATE RANDOM STIMULUS DATA
     kernel_sets = [
         np.random.randint(0, 256, size=(NB_KERNEL_ROWS, BYTES_PER_ROW), dtype=np.uint8)
@@ -159,7 +144,7 @@ def main():
     feature = np.random.randint(0, 256, size=BYTES_PER_ROW, dtype=np.uint8)
 
     # =========================================================================
-    # FILE 1: kernel_weights.txt  
+    # FILE 1: kernel_weights.txt
     # =========================================================================
     with open(os.path.join(dimc_tests_dir, "kernel_weights.txt"), "w") as f:
         for r in range(NB_KERNEL_ROWS):
@@ -169,7 +154,7 @@ def main():
                 f.write(section_to_hex(section) + "\n")
 
     # =========================================================================
-    # FILE 2: feature_vector.txt for 1 full feature vector 
+    # FILE 2: feature_vector.txt for 1 full feature vector
     # =========================================================================
     with open(os.path.join(dimc_tests_dir, "feature_vector.txt"), "w") as f:
         for s in range(NUM_SECTIONS):
@@ -188,24 +173,22 @@ def main():
                 f.write(section_to_hex(section) + "\n")
 
     # =========================================================================
-    # PRE-COMPUTE MAC VALUES (MCT=0, all 128 elements active)
+    # PRE-COMPUTE MAC VALUES (compute mask=0, all 128 elements active)
     # =========================================================================
-    mac_full  = [compute_mac(kernel[r], feature, mct=0) for r in range(NB_KERNEL_ROWS)]
+    mac_full  = [compute_mac(kernel[r], feature, compute_mask=0) for r in range(NB_KERNEL_ROWS)]
 
-    # Pre-compute 24-bit psum = MAC + BIAS, masked to 24 bits.
-    # This is what the DUT's PSOUT port outputs (before ReLU+quant).
-    psum_full = [(mac + BIAS) & 0xFFFFFF for mac in mac_full]
+    psum_full = [(mac + BIAS) & 0xFFFFFFFF for mac in mac_full]
 
     # =========================================================================
     # FILE 4: golden_matvec_4bit.txt
     # =========================================================================
-    golden_matvec = [relu_quant_with_bias(mac, BIAS) for mac in mac_full]
-    write_golden(os.path.join(dimc_tests_dir, "golden_4bit.txt"), golden_matvec, width=8)
+    golden_matvec = [clip_with_bias(mac, BIAS) for mac in mac_full]
+    write_golden(os.path.join(dimc_tests_dir, "golden_clipped_8bit.txt"), golden_matvec, width=8)
 
     # =========================================================================
-    # FILE 5: golden_psum_24bit.txt  (Test 3 expected 24-bit partial sums)
+    # FILE 5: golden_psum_32bit.txt  (Test 3 expected 32-bit partial sums)
     # =========================================================================
-    write_golden(os.path.join(dimc_tests_dir, "golden_psum_24bit.txt"), psum_full, width=24)
+    write_golden(os.path.join(dimc_tests_dir, "golden_psum_32bit.txt"), psum_full, width=32)
 
     # =========================================================================
     # FILE 6: golden_output_cleopatra.txt
@@ -216,7 +199,7 @@ def main():
     # where j is the feature-vector index and i is the kernel-row index.
     cleopatra_golden = [
         # index for golden file = 32*j + i (feature-major output order).
-        (compute_dot_product(kernel[i], features_8[j]) + BIAS) & 0xFFFFFF
+        (compute_dot_product(kernel[i], features_8[j]) + BIAS) & 0xFFFFFFFF
         for j in range(8)
         for i in range(NB_KERNEL_ROWS)
     ]
@@ -252,7 +235,7 @@ def main():
                     section = feature_sets_8[kk][p, s * BYTES_PER_SECTION : (s + 1) * BYTES_PER_SECTION]
                     f.write(section_to_hex(section) + "\n")
 
-        # get the dot procuct of kk-th kernel and feature request 
+        # get the dot procuct of kk-th kernel and feature request
         new_val = [
             # index for golden file = 32*j + i (feature-major output order).
             (
@@ -262,7 +245,7 @@ def main():
                 )
                 + BIAS
             )
-            & 0xFFFFFF
+            & 0xFFFFFFFF
             for j in range(8)
             for i in range(NB_KERNEL_ROWS)
         ]
@@ -278,33 +261,33 @@ def main():
 
 
     # =========================================================================
-    # PRE-COMPUTE MAC VALUES FOR MCT SWEEP (row 0 only, 6 MCT values)
+    # PRE-COMPUTE MAC VALUES FOR compute mask SWEEP (row 0 only, 6 compute mask values)
     # =========================================================================
-    mac_mct  = [compute_mac(kernel[0], feature, mct) for mct in MCT_VALS]
+    mac_compute_mask  = [compute_mac(kernel[0], feature, compute_mask) for compute_mask in COMPUTE_MASK_VALS]
 
-    # Pre-compute 24-bit psums for each MCT value (before ReLU+quant).
-    psum_mct = [(mac + BIAS) & 0xFFFFFF for mac in mac_mct]
-
-    # =========================================================================
-    # FILE 7: golden_mct_4bit.txt  (Test 4 expected 4-bit outputs)
-    # =========================================================================
-    golden_mct = [relu_quant_with_bias(mac, BIAS) for mac in mac_mct]
-    write_golden(os.path.join(dimc_tests_dir, "golden_mct_4bit.txt"), golden_mct, width=8)
+    # Pre-compute 32-bit psums for each compute-mask value (before clipping).
+    psum_compute_mask = [(mac + BIAS) & 0xFFFFFFFF for mac in mac_compute_mask]
 
     # =========================================================================
-    # FILE 8: golden_psum_mct_24bit.txt  (Test 4 expected 24-bit partial sums)
+    # FILE 7: golden_compute_mask_8bit.txt  (Test 4 expected 8-bit outputs)
+    # =========================================================================
+    golden_compute_mask = [clip_with_bias(mac, BIAS) for mac in mac_compute_mask]
+    write_golden(os.path.join(dimc_tests_dir, "golden_compute_mask_8bit.txt"), golden_compute_mask, width=8)
+
+    # =========================================================================
+    # FILE 8: golden_psum_compute_mask_32bit.txt  (Test 4 expected 32-bit partial sums)
     # =========================================================================
     write_golden(
-        os.path.join(dimc_tests_dir, "golden_psum_mct_24bit.txt"),
-        psum_mct,
-        width=24,
+        os.path.join(dimc_tests_dir, "golden_psum_compute_mask_32bit.txt"),
+        psum_compute_mask,
+        width=32,
     )
 
     # =========================================================================
     # SUMMARY REPORT
     # =========================================================================
     out = args.outdir
-    print(f"    BIAS = {BIAS},  MCT_VALS = {MCT_VALS}")
+    print(f"    BIAS = {BIAS},  COMPUTE_MASK_VALS = {COMPUTE_MASK_VALS}")
     print(f"    Files written to: {os.path.abspath(out)}")
 
 if __name__ == "__main__":

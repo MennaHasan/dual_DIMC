@@ -8,14 +8,14 @@
  *
  * spatz_DIMC_dual wraps two independently controlled spatz_DIMC macros and
  * three FIFOs (weight, input, output). sel selects only the observed output.
- * 
+ *
  * PIPELINE LATENCY
- * 
+ *
  *   Trigger at posedge P(N) + ApplTime → registered at P(N+1)
  *   P(N+1) — Stage 0: input capture
- *   P(N+2) — Stage 1: MCT masking
+ *   P(N+2) — Stage 1: compute_mask masking
  *   P(N+3) — Stage 2: MAC accumulation
- *   P(N+4) — Stage 3: psum + ReLU + quant; READYN goes low
+ *   P(N+4) — Stage 3: psum + ReLU + clipped; READYN goes low
  *   P(N+5) — out_fifo registers the push (one cycle after READYN goes low)
  *
  * ============================================================
@@ -32,15 +32,15 @@
  * Test  8 — Dot product row 4, DIMC 1 (reuses data from Tests 2 & 6)
  * Test  9 — Full MatVec: DIMC 1, all 32 rows; bulk drain and verify out_fifo
  * Test 10 — Full MatVec: DIMC 0, all 32 rows; bulk drain and verify out_fifo
- * Test 11 — MCT sweep: DIMC 1, row 0, 6 MCT values; drain and verify out_fifo
- * Test 12 — MCT sweep: DIMC 0, row 0, 6 MCT values; drain and verify out_fifo
+ * Test 11 — compute_mask sweep: DIMC 1, row 0, 6 compute_mask values; drain and verify out_fifo
+ * Test 12 — compute_mask sweep: DIMC 0, row 0, 6 compute_mask values; drain and verify out_fifo
  * Test 13 — Overlapping computes: DIMC0 row 5 triggered first; DIMC1 row 7
  *            triggered 3 cycles before DIMC0 finishes; both results read from
  *            out_fifo in order after both operations complete
  * Test 14 — Pipelined MatVec: DIMC 0, all 32 rows, triggers and result
  *            collection interleaved in one loop (36 cycles total)
  */
- 
+
 
 
 // ── Test enable macros ────────────────────────────────────────────────────
@@ -59,8 +59,8 @@
 `define TB_DUAL_TEST8    // Dot product row 4, DIMC 1 (requires Tests 2 and 6)
 `define TB_DUAL_TEST9    // Full MatVec DIMC 1 (requires Tests 2 and 6)
 `define TB_DUAL_TEST10   // Full MatVec DIMC 0 (requires Tests 1 and 5)
-`define TB_DUAL_TEST11   // MCT sweep DIMC 1 (requires Tests 2 and 6)
-`define TB_DUAL_TEST12   // MCT sweep DIMC 0 (requires Tests 1 and 5)
+`define TB_DUAL_TEST11   // compute_mask sweep DIMC 1 (requires Tests 2 and 6)
+`define TB_DUAL_TEST12   // compute_mask sweep DIMC 0 (requires Tests 1 and 5)
 `define TB_DUAL_TEST13   // Overlapping computes DIMC0 row 5 / DIMC1 row 7
 `define TB_DUAL_TEST14   // Pipelined MatVec DIMC 0, single-phase
 
@@ -80,29 +80,30 @@ module tb_DIMC_dual;
   parameter SECTION_WIDTH  = 256;
   parameter KERNEL_WEIGHTS_FILE         = "stimuli/dimc_tests/kernel_weights.txt";
   parameter FEATURE_VECTOR_FILE         = "stimuli/dimc_tests/feature_vector.txt";
-  parameter GOLDEN_MATVEC_FILE          = "stimuli/dimc_tests/golden_4bit.txt";
-  parameter GOLDEN_PSOUT_FILE           = "stimuli/dimc_tests/golden_psum_24bit.txt";
-  parameter GOLDEN_DOT_PRODUCT_MCT_FILE = "stimuli/dimc_tests/golden_mct_4bit.txt";
-  parameter GOLDEN_PSOUT_MCT_FILE       = "stimuli/dimc_tests/golden_psum_mct_24bit.txt";
+  parameter GOLDEN_MATVEC_FILE          = "stimuli/dimc_tests/golden_clipped_8bit.txt";
+  parameter GOLDEN_PSOUT_FILE           = "stimuli/dimc_tests/golden_psum_32bit.txt";
+  parameter GOLDEN_COMPUTE_MASK_FILE    = "stimuli/dimc_tests/golden_compute_mask_8bit.txt";
+  parameter GOLDEN_PSOUT_MASK_FILE      = "stimuli/dimc_tests/golden_psum_compute_mask_32bit.txt";
 
-  // NB_MCT_VALS: number of distinct MCT values in the sweep test (Test 11-12).
-  parameter NB_MCT_VALS = 6;
+  // NB_COMPUTE_MASK_VALS: number of distinct compute_mask values in the sweep test (Test 11-12).
+  parameter NB_COMPUTE_MASK_VALS = 6;
 
-  // BIAS: 24-bit unsigned two's-complement bias constant added to every MAC result at Stage 3.
+  // BIAS: 32-bit unsigned two's-complement bias constant added to every MAC result at Stage 3.
   // Must match BIAS in gen_stim.py and tb_DIMC.sv.
-  localparam logic [23:0] BIAS = 24'hE04300;
+  localparam logic [31:0] BIAS = 32'hFFE04300;
 
-  // MCT_VALS: six threshold values, each trimming different numbers of active elements.
-  // Must match MCT_VALS in gen_stim.py and tb_DIMC.sv.
-  localparam logic [7:0] MCT_VALS [NB_MCT_VALS] = '{8'd0, 8'd128, 8'd192, 8'd224, 8'd240, 8'd248};
+  // COMPUTE_MASK_VALS: six threshold values, each trimming different numbers of active elements.
+  // Must match COMPUTE_MASK_VALS in gen_stim.py and tb_DIMC.sv.
+  localparam logic [9:0] COMPUTE_MASK_VALS [NB_COMPUTE_MASK_VALS] =
+      '{10'd0, 10'd512, 10'd768, 10'd896, 10'd960, 10'd992};
 
   // Stimulus and golden arrays (filled by $readmemh at simulation start)
   logic [SECTION_WIDTH-1:0] kernel_stim    [0 : NB_KERNEL_ROWS*4-1]; // 128 sections
   logic [SECTION_WIDTH-1:0] feature_stim   [0 : 3];                   // 4 sections
-  logic [7:0]  golden_4bit    [0 : NB_KERNEL_ROWS-1];   // 4-bit results per row (lower nibble)
-  logic [23:0] golden_psout     [0 : NB_KERNEL_ROWS-1];   // 24-bit psums per row
-  logic [7:0]  golden_mct       [0 : NB_MCT_VALS-1];      // 4-bit results for row 0, one per MCT
-  logic [23:0] golden_psout_mct [0 : NB_MCT_VALS-1];      // 24-bit psums for row 0, one per MCT
+  logic [7:0]  golden_clipped [0 : NB_KERNEL_ROWS-1];
+  logic [31:0] golden_psout [0 : NB_KERNEL_ROWS-1];
+  logic [7:0] golden_compute_mask [0 : NB_COMPUTE_MASK_VALS-1];
+  logic [31:0] golden_psout_compute_mask [0 : NB_COMPUTE_MASK_VALS-1];
 
   // Timing: same as tb_DIMC.sv (100 MHz, 2 ns apply, 8 ns test)
   localparam time ClkPeriod = 10ns;
@@ -123,26 +124,26 @@ module tb_DIMC_dual;
   // All initial values are the safe idle state (no operation firing at time 0).
   logic        COMPE  = 1'b0;
   logic        FCSN   = 1'b1;
-  logic [1:0]  MODE   = 2'b11;  
-  logic [1:0]  FA     = '0;     
-  logic [23:0] ADDIN  = '0;     
-  logic [6:0]  RA     = '0;     
-  logic [6:0]  WA     = '0;     
-  logic        RCSN   = 1'b1;   
-  logic        RCSN0  = 1'b1;   
-  logic        RCSN1  = 1'b1;   
-  logic        RCSN2  = 1'b1;   
-  logic        RCSN3  = 1'b1;   
-  logic        WCSN   = 1'b1;   
-  logic        WEN    = 1'b1;   
+  logic [1:0]  MODE   = 2'b11;
+  logic [1:0]  FA     = '0;
+  logic [31:0] ADDIN  = '0;
+  logic [6:0]  RA     = '0;
+  logic [6:0]  WA     = '0;
+  logic        RCSN   = 1'b1;
+  logic        RCSN0  = 1'b1;
+  logic        RCSN1  = 1'b1;
+  logic        RCSN2  = 1'b1;
+  logic        RCSN3  = 1'b1;
+  logic        WCSN   = 1'b1;
+  logic        WEN    = 1'b1;
   logic [SECTION_WIDTH-1:0] M   = '1;   // write mask: all ones = full word write
-  logic [7:0]               MCT = '0;   // MCT=0: all 128 elements active (no masking)
+  logic [9:0] compute_mask = '0;
+  logic [1:0] sign_8b = 2'b00;
 
   // Outputs from the selected DIMC (muxed inside spatz_DIMC_dual by sel)
-  // Q/SOUT/RES_OUT are no longer ports on spatz_DIMC_dual -- read them via
-  // hierarchical reference (i_dut.Q / i_dut.SOUT / i_dut.RES_OUT) instead.
+  // Q and m_sout are read through hierarchical references for per-macro checks.
   logic                     READYN;
-  logic [23:0]              PSOUT;
+  logic [31:0]              PSOUT;
 
   // Input feature FIFO interface (driven by this testbench)
   logic                     inp_push = 1'b0;  // push inp_data when high and not full
@@ -158,7 +159,7 @@ module tb_DIMC_dual;
 
   // Output FIFO interface (read by this testbench after computes)
   logic        out_pop  = 1'b0;   // pop and discard oldest result when high
-  logic [23:0] out_data;           // 24-bit psum at current FIFO head
+  logic [31:0] out_data;
   logic        out_full;           // DUT output: FIFO is full (should never happen in these tests)
   logic        out_empty;          // DUT output: FIFO is empty (no results ready)
 
@@ -189,7 +190,8 @@ module tb_DIMC_dual;
     .WCSN_m0  (sel ? 1'b1 : WCSN),
     .WEN_m0   (sel ? 1'b1 : WEN),
     .M_m0     (M),
-    .MCT_m0   (MCT),
+    .compute_mask_m0(compute_mask),
+    .sign_8b_m0(sign_8b),
     .COMPE_m1 (sel ? COMPE : 1'b0),
     .FCSN_m1  (sel ? FCSN : 1'b1),
     .MODE_m1  (MODE),
@@ -205,7 +207,8 @@ module tb_DIMC_dual;
     .WCSN_m1  (sel ? WCSN : 1'b1),
     .WEN_m1   (sel ? WEN : 1'b1),
     .M_m1     (M),
-    .MCT_m1   (MCT),
+    .compute_mask_m1(compute_mask),
+    .sign_8b_m1(sign_8b),
     .READYN   (READYN),
     .PSOUT    (PSOUT),
     .inp_push (inp_push),
@@ -317,22 +320,22 @@ module tb_DIMC_dual;
     input [SECTION_WIDTH-1:0] f3
   );
     @(posedge clk); #ApplTime;
-    inp_push = 1'b1; inp_data = f0;                // set up for f0 push 
+    inp_push = 1'b1; inp_data = f0;                // set up for f0 push
 
     @(posedge clk); #ApplTime;                     // f0 pushed this edge
     inp_data = f1;
     FCSN = 1'b0; FA = 2'd0;                        // set up for f0 load
 
-    @(posedge clk); #ApplTime;                     // f1 pushed; f0 now loaded 
+    @(posedge clk); #ApplTime;                     // f1 pushed; f0 now loaded
     inp_data = f2; FA = 2'd1;
 
-    @(posedge clk); #ApplTime;                     // f2 pushed; f1 now loaded 
+    @(posedge clk); #ApplTime;                     // f2 pushed; f1 now loaded
     inp_data = f3; FA = 2'd2;
 
-    @(posedge clk); #ApplTime;                     // f3 pushed, f2 now loaded 
+    @(posedge clk); #ApplTime;                     // f3 pushed, f2 now loaded
     inp_push = 1'b0; FA = 2'd3;
 
-    @(posedge clk); #ApplTime;                     // f3 now loaded 
+    @(posedge clk); #ApplTime;                     // f3 now loaded
     FCSN = 1'b1; FA = '0;                          // deassert; buffer retains all four values
   endtask
 
@@ -345,15 +348,15 @@ module tb_DIMC_dual;
   //   - out_push goes high at P(N+4)
   //   - out_fifo registers the push at P(N+5)
   task automatic compute_and_capture_dual(
-    input  [4:0]  row,      
-    input  [23:0] bias,     
-    input  [7:0]  mct_val,  
-    output [23:0] psout,    
-    output [3:0]  quant     
+    input  [4:0]  row,
+    input  [31:0] bias,
+    input  [9:0] compute_mask_val,
+    output [31:0] psout,
+    output [7:0] clipped
   );
     // --- Cycle N: assert compute trigger for exactly ONE cycle ---
     @(posedge clk); #ApplTime;
-    COMPE = 1'b1; MODE = 2'b11; MCT = mct_val;
+    COMPE = 1'b1; MODE = 2'b11; compute_mask = compute_mask_val; sign_8b = 2'b00;
     RA = {row, 2'b00}; ADDIN = bias;   // RA section bits ignored in compute mode
     RCSN = 1'b0; RCSN0 = 1'b0; RCSN1 = 1'b0; RCSN2 = 1'b0; RCSN3 = 1'b0;
     WCSN = 1'b1; WEN = 1'b1; FCSN = 1'b1;   // write/feature paths idle
@@ -364,7 +367,7 @@ module tb_DIMC_dual;
     RCSN = 1'b1; RCSN0 = 1'b1; RCSN1 = 1'b1; RCSN2 = 1'b1; RCSN3 = 1'b1;
 
     // --- Cycles N+2, N+3: pipeline advances through Stages 1 and 2 ---
-    @(posedge clk);   // Stage 1: MCT masking
+    @(posedge clk);   // Stage 1: computation masking
     @(posedge clk);   // Stage 2: MAC accumulation
 
     // --- Cycle N+4: Stage 3 completes; READYN goes low ---
@@ -372,7 +375,7 @@ module tb_DIMC_dual;
     if (READYN !== 1'b0)
       $error("[TB] READYN did not go low after 4-cycle pipeline (row=%0d, sel=%0d)", row, sel);
     psout = PSOUT;
-    quant = {i_dut.RES_OUT, i_dut.SOUT};   // pack 4-bit result (internal signals, not ports)
+    clipped = i_dut.m_sout[sel];
     // NOTE:
     // Caller must wait one extra posedge before checking out_empty.
   endtask
@@ -388,8 +391,8 @@ module tb_DIMC_dual;
   // =========================================================================
   initial begin
     logic [SECTION_WIDTH-1:0] rd_data;
-    logic [23:0]              psout;
-    logic [3:0]               quant;
+    logic [31:0]              psout;
+    logic [7:0]               clipped;
 
     // Wait for reset release, then one idle cycle for DUT outputs to settle
     @(posedge rst_n);
@@ -398,10 +401,10 @@ module tb_DIMC_dual;
     // Load all stimulus and golden data from files generated by gen_stim.py.
     $readmemh(KERNEL_WEIGHTS_FILE,         kernel_stim);     // 128 sections: 32 rows × 4
     $readmemh(FEATURE_VECTOR_FILE,         feature_stim);    //   4 sections: 1024-bit vector
-    $readmemh(GOLDEN_MATVEC_FILE,          golden_4bit);   //  32 entries: 4-bit results per row
-    $readmemh(GOLDEN_PSOUT_FILE,           golden_psout);    //  32 entries: 24-bit psums per row
-    $readmemh(GOLDEN_DOT_PRODUCT_MCT_FILE, golden_mct);      //   6 entries: 4-bit result for row 0 per MCT
-    $readmemh(GOLDEN_PSOUT_MCT_FILE,       golden_psout_mct);//   6 entries: 24-bit psum for row 0 per MCT
+    $readmemh(GOLDEN_MATVEC_FILE,       golden_clipped);
+    $readmemh(GOLDEN_PSOUT_FILE,        golden_psout);
+    $readmemh(GOLDEN_COMPUTE_MASK_FILE, golden_compute_mask);
+    $readmemh(GOLDEN_PSOUT_MASK_FILE,   golden_psout_compute_mask);
 
 `ifdef TB_DUAL_TEST0
     // =======================================================================
@@ -415,16 +418,16 @@ module tb_DIMC_dual;
       sel = 1'b0;
       @(posedge clk); #TestTime;
       if (READYN !== 1'b1)                       reset_ok = 1'b0;   // not-ready on reset
-      if (PSOUT  !== 24'h0)                      reset_ok = 1'b0;   // psum register cleared
-      if ({i_dut.RES_OUT,i_dut.SOUT} !== 4'h0)   reset_ok = 1'b0;   // quant output cleared
+      if (PSOUT !== 32'h0)             reset_ok = 1'b0;
+      if (i_dut.m_sout[sel] !== 8'h0)  reset_ok = 1'b0;
       if (i_dut.Q !== '0)                         reset_ok = 1'b0;   // kernel readback cleared
 
       // Check DIMC 1 via sel mux
       sel = 1'b1;
       @(posedge clk); #TestTime;
       if (READYN !== 1'b1)                       reset_ok = 1'b0;
-      if (PSOUT  !== 24'h0)                      reset_ok = 1'b0;
-      if ({i_dut.RES_OUT,i_dut.SOUT} !== 4'h0)   reset_ok = 1'b0;
+      if (PSOUT !== 32'h0)             reset_ok = 1'b0;
+      if (i_dut.m_sout[sel] !== 8'h0)  reset_ok = 1'b0;
       if (i_dut.Q !== '0)                         reset_ok = 1'b0;
       sel = 1'b0;   // return to default
 
@@ -519,13 +522,13 @@ module tb_DIMC_dual;
       automatic int test_fail = 0;
       sel = 1'b0;
       load_feature_dual(feature_stim[0], feature_stim[1], feature_stim[2], feature_stim[3]);
-      compute_and_capture_dual(5'd1, BIAS, 8'd0, psout, quant);
+      compute_and_capture_dual(5'd1, BIAS, 10'd0, psout, clipped);
       // Verify direct DIMC output ports
-      if (psout !== golden_psout[1] || quant !== golden_4bit[1][3:0]) begin
+      if (psout !== golden_psout[1] || clipped !== golden_clipped[1]) begin
         if (psout !== golden_psout[1])
-          $error("[TB] Test5 DIMC0 row1: psout got 0x%06h, expected 0x%06h", psout, golden_psout[1]);
-        if (quant !== golden_4bit[1][3:0])
-          $error("[TB] Test5 DIMC0 row1: quant got %0d, expected %0d", quant, golden_4bit[1][3:0]);
+          $error("[TB] Test5 DIMC0 row1: psout got 0x%08h, expected 0x%08h", psout, golden_psout[1]);
+        if (clipped !== golden_clipped[1])
+          $error("[TB] Test5 DIMC0 row1: clipped got %0d, expected %0d", clipped, golden_clipped[1]);
         test_fail++;
       end
       // Wait one cycle: out_push fires at P(N+4); out_fifo registers at P(N+5).
@@ -534,11 +537,11 @@ module tb_DIMC_dual;
       if (out_empty) begin
         $error("[TB] Test5: out_fifo empty AND push did not fire"); test_fail++;
       end else if (out_data !== golden_psout[1]) begin
-        $error("[TB] Test5: out_fifo got 0x%06h, expected 0x%06h", out_data, golden_psout[1]); test_fail++;
+        $error("[TB] Test5: out_fifo got 0x%08h, expected 0x%08h", out_data, golden_psout[1]); test_fail++;
       end else begin
         // Pop to clear the result from the FIFO
         out_pop = 1'b1; @(posedge clk); #ApplTime; out_pop = 1'b0;
-      end 
+      end
       if (test_fail == 0) begin $display("[TB] Test 5: PASS"); pass_count++; end
       else                begin $display("[TB] Test 5: FAIL"); fail_count++; end
     end
@@ -553,19 +556,19 @@ module tb_DIMC_dual;
       automatic int test_fail = 0;
       sel = 1'b1;
       load_feature_dual(feature_stim[0], feature_stim[1], feature_stim[2], feature_stim[3]);
-      compute_and_capture_dual(5'd1, BIAS, 8'd0, psout, quant);
-      if (psout !== golden_psout[1] || quant !== golden_4bit[1][3:0]) begin
+      compute_and_capture_dual(5'd1, BIAS, 10'd0, psout, clipped);
+      if (psout !== golden_psout[1] || clipped !== golden_clipped[1]) begin
         if (psout !== golden_psout[1])
-          $error("[TB] Test6 DIMC1 row1: psout got 0x%06h, expected 0x%06h", psout, golden_psout[1]);
-        if (quant !== golden_4bit[1][3:0])
-          $error("[TB] Test6 DIMC1 row1: quant got %0d, expected %0d", quant, golden_4bit[1][3:0]);
+          $error("[TB] Test6 DIMC1 row1: psout got 0x%08h, expected 0x%08h", psout, golden_psout[1]);
+        if (clipped !== golden_clipped[1])
+          $error("[TB] Test6 DIMC1 row1: clipped got %0d, expected %0d", clipped, golden_clipped[1]);
         test_fail++;
       end
       @(posedge clk); #ApplTime;   // wait for out_fifo push to register
       if (out_empty) begin
         $error("[TB] Test6: out_fifo empty — push did not fire"); test_fail++;
       end else if (out_data !== golden_psout[1]) begin
-        $error("[TB] Test6: out_fifo got 0x%06h, expected 0x%06h", out_data, golden_psout[1]); test_fail++;
+        $error("[TB] Test6: out_fifo got 0x%08h, expected 0x%08h", out_data, golden_psout[1]); test_fail++;
       end
       out_pop = 1'b1; @(posedge clk); #ApplTime; out_pop = 1'b0;
       if (test_fail == 0) begin $display("[TB] Test 6: PASS"); pass_count++; end
@@ -581,19 +584,19 @@ module tb_DIMC_dual;
     begin
       automatic int test_fail = 0;
       sel = 1'b0;
-      compute_and_capture_dual(5'd4, BIAS, 8'd0, psout, quant);
-      if (psout !== golden_psout[4] || quant !== golden_4bit[4][3:0]) begin
+      compute_and_capture_dual(5'd4, BIAS, 10'd0, psout, clipped);
+      if (psout !== golden_psout[4] || clipped !== golden_clipped[4]) begin
         if (psout !== golden_psout[4])
-          $error("[TB] Test7 DIMC0 row4: psout got 0x%06h, expected 0x%06h", psout, golden_psout[4]);
-        if (quant !== golden_4bit[4][3:0])
-          $error("[TB] Test7 DIMC0 row4: quant got %0d, expected %0d", quant, golden_4bit[4][3:0]);
+          $error("[TB] Test7 DIMC0 row4: psout got 0x%08h, expected 0x%08h", psout, golden_psout[4]);
+        if (clipped !== golden_clipped[4])
+          $error("[TB] Test7 DIMC0 row4: clipped got %0d, expected %0d", clipped, golden_clipped[4]);
         test_fail++;
       end
       @(posedge clk); #ApplTime;   // wait for out_fifo push to register
       if (out_empty) begin
         $error("[TB] Test7: out_fifo empty — push did not fire"); test_fail++;
       end else if (out_data !== golden_psout[4]) begin
-        $error("[TB] Test7: out_fifo got 0x%06h, expected 0x%06h", out_data, golden_psout[4]); test_fail++;
+        $error("[TB] Test7: out_fifo got 0x%08h, expected 0x%08h", out_data, golden_psout[4]); test_fail++;
       end
       out_pop = 1'b1; @(posedge clk); #ApplTime; out_pop = 1'b0;
       if (test_fail == 0) begin $display("[TB] Test 7: PASS"); pass_count++; end
@@ -609,19 +612,19 @@ module tb_DIMC_dual;
     begin
       automatic int test_fail = 0;
       sel = 1'b1;
-      compute_and_capture_dual(5'd4, BIAS, 8'd0, psout, quant);
-      if (psout !== golden_psout[4] || quant !== golden_4bit[4][3:0]) begin
+      compute_and_capture_dual(5'd4, BIAS, 10'd0, psout, clipped);
+      if (psout !== golden_psout[4] || clipped !== golden_clipped[4]) begin
         if (psout !== golden_psout[4])
-          $error("[TB] Test8 DIMC1 row4: psout got 0x%06h, expected 0x%06h", psout, golden_psout[4]);
-        if (quant !== golden_4bit[4][3:0])
-          $error("[TB] Test8 DIMC1 row4: quant got %0d, expected %0d", quant, golden_4bit[4][3:0]);
+          $error("[TB] Test8 DIMC1 row4: psout got 0x%08h, expected 0x%08h", psout, golden_psout[4]);
+        if (clipped !== golden_clipped[4])
+          $error("[TB] Test8 DIMC1 row4: clipped got %0d, expected %0d", clipped, golden_clipped[4]);
         test_fail++;
       end
       @(posedge clk); #ApplTime;
       if (out_empty) begin
         $error("[TB] Test8: out_fifo empty — push did not fire"); test_fail++;
       end else if (out_data !== golden_psout[4]) begin
-        $error("[TB] Test8: out_fifo got 0x%06h, expected 0x%06h", out_data, golden_psout[4]); test_fail++;
+        $error("[TB] Test8: out_fifo got 0x%08h, expected 0x%08h", out_data, golden_psout[4]); test_fail++;
       end
       out_pop = 1'b1; @(posedge clk); #ApplTime; out_pop = 1'b0;
       if (test_fail == 0) begin $display("[TB] Test 8: PASS"); pass_count++; end
@@ -634,21 +637,21 @@ module tb_DIMC_dual;
     // TEST 9: FULL MATRIX-VECTOR MULTIPLICATION — DIMC 1 (all 32 rows)
     // =======================================================================
     // Fires 32 consecutive compute operations on DIMC 1 (rows 0-31) without
-    // draining out_fifo in between.  
+    // draining out_fifo in between.
     $display("[TB] Test 9: Full matrix-vector multiplication, DIMC 1 (32 rows)");
     begin
       automatic int test_fail = 0;
       sel = 1'b1;
       for (int r = 0; r < NB_KERNEL_ROWS; r++) begin
-        compute_and_capture_dual(5'(r), BIAS, 8'd0, psout, quant);
+        compute_and_capture_dual(5'(r), BIAS, 10'd0, psout, clipped);
         // Check direct outputs from each compute immediately
-        if (psout !== golden_psout[r] || quant !== golden_4bit[r][3:0]) begin
+        if (psout !== golden_psout[r] || clipped !== golden_clipped[r]) begin
           if (psout !== golden_psout[r])
-            $error("[TB] Test9 DIMC1 row%0d: psout got 0x%06h, expected 0x%06h",
+            $error("[TB] Test9 DIMC1 row%0d: psout got 0x%08h, expected 0x%08h",
                    r, psout, golden_psout[r]);
-          if (quant !== golden_4bit[r][3:0])
-            $error("[TB] Test9 DIMC1 row%0d: quant got %0d, expected %0d",
-                   r, quant, golden_4bit[r][3:0]);
+          if (clipped !== golden_clipped[r])
+            $error("[TB] Test9 DIMC1 row%0d: clipped got %0d, expected %0d",
+                   r, clipped, golden_clipped[r]);
           test_fail++;
         end
         // Note: out_fifo pushes are batching up in the background.
@@ -665,7 +668,7 @@ module tb_DIMC_dual;
         if (out_empty) begin
           $error("[TB] Test9 out_fifo empty at row%0d — push did not fire", r); test_fail++;
         end else if (out_data !== golden_psout[r]) begin
-          $error("[TB] Test9 out_fifo row%0d: got 0x%06h, expected 0x%06h",
+          $error("[TB] Test9 out_fifo row%0d: got 0x%08h, expected 0x%08h",
                  r, out_data, golden_psout[r]); test_fail++;
         end
         out_pop = 1'b1; @(posedge clk); #ApplTime; out_pop = 1'b0;
@@ -685,14 +688,14 @@ module tb_DIMC_dual;
       automatic int test_fail = 0;
       sel = 1'b0;
       for (int r = 0; r < NB_KERNEL_ROWS; r++) begin
-        compute_and_capture_dual(5'(r), BIAS, 8'd0, psout, quant);
-        if (psout !== golden_psout[r] || quant !== golden_4bit[r][3:0]) begin
+        compute_and_capture_dual(5'(r), BIAS, 10'd0, psout, clipped);
+        if (psout !== golden_psout[r] || clipped !== golden_clipped[r]) begin
           if (psout !== golden_psout[r])
-            $error("[TB] Test10 DIMC0 row%0d: psout got 0x%06h, expected 0x%06h",
+            $error("[TB] Test10 DIMC0 row%0d: psout got 0x%08h, expected 0x%08h",
                    r, psout, golden_psout[r]);
-          if (quant !== golden_4bit[r][3:0])
-            $error("[TB] Test10 DIMC0 row%0d: quant got %0d, expected %0d",
-                   r, quant, golden_4bit[r][3:0]);
+          if (clipped !== golden_clipped[r])
+            $error("[TB] Test10 DIMC0 row%0d: clipped got %0d, expected %0d",
+                   r, clipped, golden_clipped[r]);
           test_fail++;
         end
       end
@@ -701,7 +704,7 @@ module tb_DIMC_dual;
         if (out_empty) begin
           $error("[TB] Test10 out_fifo empty at row%0d — push did not fire", r); test_fail++;
         end else if (out_data !== golden_psout[r]) begin
-          $error("[TB] Test10 out_fifo row%0d: got 0x%06h, expected 0x%06h",
+          $error("[TB] Test10 out_fifo row%0d: got 0x%08h, expected 0x%08h",
                  r, out_data, golden_psout[r]); test_fail++;
         end
         out_pop = 1'b1; @(posedge clk); #ApplTime; out_pop = 1'b0;
@@ -713,35 +716,35 @@ module tb_DIMC_dual;
 
 `ifdef TB_DUAL_TEST11
     // =======================================================================
-    // TEST 11: MCT MASKING SWEEP — DIMC 1 (row 0, 6 MCT values)
+    // TEST 11: compute_mask MASKING SWEEP — DIMC 1 (row 0, 6 compute_mask values)
     // =======================================================================
-    // Sweeps 6 MCT values on DIMC 1's row 0.
+    // Sweeps 6 compute_mask values on DIMC 1's row 0.
     // The 6 results accumulate
     // in out_fifo and are drained in a bulk drain after the loop.
 
-    $display("[TB] Test 11: MCT masking sweep, DIMC 1 (%0d values, row 0)", NB_MCT_VALS);
+    $display("[TB] Test 11: compute_mask masking sweep, DIMC 1 (%0d values, row 0)", NB_COMPUTE_MASK_VALS);
     begin
       automatic int test_fail = 0;
       sel = 1'b1;
-      for (int m = 0; m < NB_MCT_VALS; m++) begin
-        compute_and_capture_dual(5'd0, BIAS, MCT_VALS[m], psout, quant);
-        if (psout !== golden_psout_mct[m] || quant !== golden_mct[m][3:0]) begin
-          if (psout !== golden_psout_mct[m])
-            $error("[TB] Test11 DIMC1 MCT=0x%02h: psout got 0x%06h, expected 0x%06h",
-                   MCT_VALS[m], psout, golden_psout_mct[m]);
-          if (quant !== golden_mct[m][3:0])
-            $error("[TB] Test11 DIMC1 MCT=0x%02h: quant got %0d, expected %0d",
-                   MCT_VALS[m], quant, golden_mct[m][3:0]);
+      for (int m = 0; m < NB_COMPUTE_MASK_VALS; m++) begin
+        compute_and_capture_dual(5'd0, BIAS, COMPUTE_MASK_VALS[m], psout, clipped);
+        if (psout !== golden_psout_compute_mask[m] || clipped !== golden_compute_mask[m]) begin
+          if (psout !== golden_psout_compute_mask[m])
+            $error("[TB] Test11 DIMC1 compute_mask=0x%02h: psout got 0x%08h, expected 0x%08h",
+                   COMPUTE_MASK_VALS[m], psout, golden_psout_compute_mask[m]);
+          if (clipped !== golden_compute_mask[m])
+            $error("[TB] Test11 DIMC1 compute_mask=0x%02h: clipped got %0d, expected %0d",
+                   COMPUTE_MASK_VALS[m], clipped, golden_compute_mask[m]);
           test_fail++;
         end
       end
       @(posedge clk); #ApplTime;   // wait for last push to register
-      for (int m = 0; m < NB_MCT_VALS; m++) begin
+      for (int m = 0; m < NB_COMPUTE_MASK_VALS; m++) begin
         if (out_empty) begin
-          $error("[TB] Test11 out_fifo empty at MCT index%0d — push did not fire", m); test_fail++;
-        end else if (out_data !== golden_psout_mct[m]) begin
-          $error("[TB] Test11 out_fifo MCT=0x%02h: got 0x%06h, expected 0x%06h",
-                 MCT_VALS[m], out_data, golden_psout_mct[m]); test_fail++;
+          $error("[TB] Test11 out_fifo empty at compute_mask index%0d — push did not fire", m); test_fail++;
+        end else if (out_data !== golden_psout_compute_mask[m]) begin
+          $error("[TB] Test11 out_fifo compute_mask=0x%02h: got 0x%08h, expected 0x%08h",
+                 COMPUTE_MASK_VALS[m], out_data, golden_psout_compute_mask[m]); test_fail++;
         end
         out_pop = 1'b1; @(posedge clk); #ApplTime; out_pop = 1'b0;
       end
@@ -752,31 +755,31 @@ module tb_DIMC_dual;
 
 `ifdef TB_DUAL_TEST12
     // =======================================================================
-    // TEST 12: MCT MASKING SWEEP — DIMC 0 (row 0, 6 MCT values)
+    // TEST 12: compute_mask MASKING SWEEP — DIMC 0 (row 0, 6 compute_mask values)
     // =======================================================================
-    $display("[TB] Test 12: MCT masking sweep, DIMC 0 (%0d values, row 0)", NB_MCT_VALS);
+    $display("[TB] Test 12: compute_mask masking sweep, DIMC 0 (%0d values, row 0)", NB_COMPUTE_MASK_VALS);
     begin
       automatic int test_fail = 0;
       sel = 1'b0;
-      for (int m = 0; m < NB_MCT_VALS; m++) begin
-        compute_and_capture_dual(5'd0, BIAS, MCT_VALS[m], psout, quant);
-        if (psout !== golden_psout_mct[m] || quant !== golden_mct[m][3:0]) begin
-          if (psout !== golden_psout_mct[m])
-            $error("[TB] Test12 DIMC0 MCT=0x%02h: psout got 0x%06h, expected 0x%06h",
-                   MCT_VALS[m], psout, golden_psout_mct[m]);
-          if (quant !== golden_mct[m][3:0])
-            $error("[TB] Test12 DIMC0 MCT=0x%02h: quant got %0d, expected %0d",
-                   MCT_VALS[m], quant, golden_mct[m][3:0]);
+      for (int m = 0; m < NB_COMPUTE_MASK_VALS; m++) begin
+        compute_and_capture_dual(5'd0, BIAS, COMPUTE_MASK_VALS[m], psout, clipped);
+        if (psout !== golden_psout_compute_mask[m] || clipped !== golden_compute_mask[m]) begin
+          if (psout !== golden_psout_compute_mask[m])
+            $error("[TB] Test12 DIMC0 compute_mask=0x%02h: psout got 0x%08h, expected 0x%08h",
+                   COMPUTE_MASK_VALS[m], psout, golden_psout_compute_mask[m]);
+          if (clipped !== golden_compute_mask[m])
+            $error("[TB] Test12 DIMC0 compute_mask=0x%02h: clipped got %0d, expected %0d",
+                   COMPUTE_MASK_VALS[m], clipped, golden_compute_mask[m]);
           test_fail++;
         end
       end
       @(posedge clk); #ApplTime;
-      for (int m = 0; m < NB_MCT_VALS; m++) begin
+      for (int m = 0; m < NB_COMPUTE_MASK_VALS; m++) begin
         if (out_empty) begin
-          $error("[TB] Test12 out_fifo empty at MCT index%0d — push did not fire", m); test_fail++;
-        end else if (out_data !== golden_psout_mct[m]) begin
-          $error("[TB] Test12 out_fifo MCT=0x%02h: got 0x%06h, expected 0x%06h",
-                 MCT_VALS[m], out_data, golden_psout_mct[m]); test_fail++;
+          $error("[TB] Test12 out_fifo empty at compute_mask index%0d — push did not fire", m); test_fail++;
+        end else if (out_data !== golden_psout_compute_mask[m]) begin
+          $error("[TB] Test12 out_fifo compute_mask=0x%02h: got 0x%08h, expected 0x%08h",
+                 COMPUTE_MASK_VALS[m], out_data, golden_psout_compute_mask[m]); test_fail++;
         end
         out_pop = 1'b1; @(posedge clk); #ApplTime; out_pop = 1'b0;
       end
@@ -800,7 +803,7 @@ module tb_DIMC_dual;
       // P(N): trigger DIMC0 row 5
       sel = 1'b0;
       @(posedge clk); #ApplTime;
-      COMPE = 1'b1; MODE = 2'b11; MCT = 8'd0;
+      COMPE = 1'b1; MODE = 2'b11; compute_mask = 10'd0;
       RA    = {5'd5, 2'b00}; ADDIN = BIAS;
       RCSN  = 1'b0; RCSN0 = 1'b0; RCSN1 = 1'b0; RCSN2 = 1'b0; RCSN3 = 1'b0;
       WCSN  = 1'b1; WEN   = 1'b1; FCSN  = 1'b1;
@@ -810,7 +813,7 @@ module tb_DIMC_dual;
       @(posedge clk); #ApplTime;
       sel   = 1'b1;
       COMPE = 1'b1;
-      RA    = {5'd7, 2'b00};   // row 7 for DIMC1; ADDIN/MCT/MODE unchanged
+      RA    = {5'd7, 2'b00};   // row 7 for DIMC1; ADDIN/compute_mask/MODE unchanged
 
       // P(N+2): DIMC1 Stage0 latches; deassert trigger; switch sel=0 so READYN
       // tracks DIMC0 from here through its Stage3 completion at P(N+4).
@@ -837,7 +840,7 @@ module tb_DIMC_dual;
       if (out_empty) begin
         $error("[TB] Test13: out_fifo empty — DIMC0 row5 result missing"); test_fail++;
       end else if (out_data !== golden_psout[5]) begin
-        $error("[TB] Test13 DIMC0 row5: out_fifo got 0x%06h, expected 0x%06h",
+        $error("[TB] Test13 DIMC0 row5: out_fifo got 0x%08h, expected 0x%08h",
                out_data, golden_psout[5]); test_fail++;
       end
       out_pop = 1'b1; @(posedge clk); #ApplTime; out_pop = 1'b0;
@@ -846,7 +849,7 @@ module tb_DIMC_dual;
       if (out_empty) begin
         $error("[TB] Test13: out_fifo empty — DIMC1 row7 result missing"); test_fail++;
       end else if (out_data !== golden_psout[7]) begin
-        $error("[TB] Test13 DIMC1 row7: out_fifo got 0x%06h, expected 0x%06h",
+        $error("[TB] Test13 DIMC1 row7: out_fifo got 0x%08h, expected 0x%08h",
                out_data, golden_psout[7]); test_fail++;
       end
       out_pop = 1'b1; @(posedge clk); #ApplTime; out_pop = 1'b0;
@@ -881,11 +884,11 @@ module tb_DIMC_dual;
 
         for (int i = 0; i <= 32; i++) begin
           if (i < NB_KERNEL_ROWS) begin
-            COMPE = 1'b1; MODE = 2'b11; MCT = 8'd0;
+            COMPE = 1'b1; MODE = 2'b11; compute_mask = 10'd0;
             RA    = {5'(i), 2'b00}; ADDIN = BIAS;
             RCSN  = 1'b0; RCSN0 = 1'b0; RCSN1 = 1'b0; RCSN2 = 1'b0; RCSN3 = 1'b0;
             WCSN  = 1'b1; WEN   = 1'b1; FCSN  = 1'b1;
-            
+
           end else begin
             // COMPE/RCSN* deasserted after last row
             COMPE = 1'b0;
@@ -906,7 +909,7 @@ module tb_DIMC_dual;
             end
           end
         out_pop = 1'b0;
-        
+
 
 
         /* for debugging -------------------------
@@ -914,14 +917,14 @@ module tb_DIMC_dual;
         if (fd == 0)
           $fatal(1, "[TB] Could not open debug/test14_fifo_dump.txt");
 
-        $fdisplay(fd, "i= %d out_data=%06h", 0, out_data);
+        $fdisplay(fd, "i= %d out_data=%08h", 0, out_data);
         out_pop = 1'b1;
           for (int i = 1; i < 32; i++) begin
             @(posedge clk); #TestTime;
-            $fdisplay(fd, "i= %d out_data=%06h", i, out_data);
+            $fdisplay(fd, "i= %d out_data=%08h", i, out_data);
           end
         out_pop = 1'b0;
-        
+
         $fclose(fd);
         $display("[TB] Test 14: FIFO dump written to debug/test14_fifo_dump.txt");
         */
@@ -960,7 +963,7 @@ module tb_DIMC_dual;
         for (int i = 0; i <= NB_KERNEL_ROWS + 5; i++) begin
           if (i < NB_KERNEL_ROWS) begin
             // requesting row i
-            COMPE = 1'b1; MODE = 2'b11; MCT = 8'd0;
+            COMPE = 1'b1; MODE = 2'b11; compute_mask = 10'd0;
             RA    = {5'(i), 2'b00}; ADDIN = BIAS;
             RCSN  = 1'b0; RCSN0 = 1'b0; RCSN1 = 1'b0; RCSN2 = 1'b0; RCSN3 = 1'b0;
             WCSN  = 1'b1; WEN   = 1'b1; FCSN  = 1'b1;
@@ -991,8 +994,8 @@ module tb_DIMC_dual;
 
         end
 
-        
-        
+
+
 
 
         /* for debugging -------------------------
@@ -1000,14 +1003,14 @@ module tb_DIMC_dual;
         if (fd == 0)
           $fatal(1, "[TB] Could not open debug/test14_fifo_dump.txt");
 
-        $fdisplay(fd, "i= %d out_data=%06h", 0, out_data);
+        $fdisplay(fd, "i= %d out_data=%08h", 0, out_data);
         out_pop = 1'b1;
           for (int i = 1; i < 32; i++) begin
             @(posedge clk); #TestTime;
-            $fdisplay(fd, "i= %d out_data=%06h", i, out_data);
+            $fdisplay(fd, "i= %d out_data=%08h", i, out_data);
           end
         out_pop = 1'b0;
-        
+
         $fclose(fd);
         $display("[TB] Test 15: FIFO dump written to debug/test14_fifo_dump.txt");
         */
@@ -1044,7 +1047,7 @@ module tb_DIMC_dual;
   // =========================================================================
   // WATCHDOG TIMER
   // =========================================================================
-  // 100 µs ceiling 
+  // 100 µs ceiling
   // A watchdog trip always indicates a bug (DUT stalls or task deadlock).
   initial begin
     #(50000 * ClkPeriod);

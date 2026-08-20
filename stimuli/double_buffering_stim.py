@@ -21,8 +21,7 @@ WEIGHT_MATRIX_ROWS = K * M
 WEIGHT_MATRIX_COLS = L * N_ELEMENTS
 INPUT_MATRIX_ROWS = L * N_ELEMENTS
 INPUT_MATRIX_COLS = Q * P
-BIAS = 0xE04300
-UINT24_MASK = (1 << 24) - 1
+BIAS = -2_080_000
 UINT32_MASK = (1 << 32) - 1
 
 Matrix = List[List[int]]
@@ -93,7 +92,7 @@ def write_tiled_inputs(path: Path, tiles: InputTiles) -> None:
 
 
 def calculate_golden_matmul(weight_matrix: Matrix, input_matrix: Matrix) -> Matrix:
-    """Model tiled accumulation, including one 24-bit biased sum per L tile."""
+    """Model tiled accumulation, including one 32-bit biased sum per L tile."""
     return [
         [
             sum(
@@ -107,7 +106,7 @@ def calculate_golden_matmul(weight_matrix: Matrix, input_matrix: Matrix) -> Matr
                     )
                     + BIAS
                 )
-                & UINT24_MASK
+                & UINT32_MASK
                 for l_index in range(L)
             )
             & UINT32_MASK

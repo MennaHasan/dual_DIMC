@@ -3,32 +3,31 @@
 `timescale 1ns/1ps
 
 module spatz_DIMC  #(
- 	// Parameter for Section Width
+    // Parameter for Section Width
     parameter SECTION_WIDTH = 256   // can be 256, 512, or 1024
 )(
 
     // System Interface
     input  logic                        RCK,        // Main clock
     input  logic                        RESETn,     // Active-low reset
-    
+
     // Control Signals
     output logic                        READYN,     // Active-low ready (output valid)
     input  logic                        COMPE,      // Operation mode (1=compute, -
     input  logic                        FCSN,       // Feature buffer chip select (active-low)
     input  logic [1:0]                  MODE,       // Bit resolution (0=1b, 1=2b, 2=4b, 3=8b)
-    
+
     // Address/Data Interface
     input  logic [1:0]                  FA,        // Feature buffer address
     input  logic [SECTION_WIDTH-1:0]    FD,        // Feature buffer data
-    input  logic [23:0]                 ADDIN,     // Bias/partial sum input
-    output logic                        SOUT,      // Sum output (LSB of result)
-    output logic [2:0]                  RES_OUT,   // Result output (MSBs of 4-bit result)
-    output logic [23:0]                 PSOUT,     // Pre-ReLU output
+    input  logic [31:0]                 ADDIN,     // Bias/partial sum input
+    output logic [7:0]                  SOUT,      // Sum output (LSB of result)
+    output logic [31:0]                 PSOUT,     // Pre-ReLU output
     output logic [SECTION_WIDTH-1:0]    Q,         // Memory output
     input  logic [SECTION_WIDTH-1:0]    D,         // Memory input
     input  logic [6:0]                  RA,        // Memory address
     input  logic [6:0]                  WA,        // Write address
-    
+
     // Memory Control
     input  logic                        RCSN,       // Read chip select (active-low)
     input  logic                        RCSN0,      // Computation control
@@ -38,10 +37,18 @@ module spatz_DIMC  #(
     input  logic                        WCK,        // Write clock
     input  logic                        WCSN,       // Write chip select (active-low)
     input  logic                        WEN,        // Write enable (active-low)
-    
+
     // Masking Signals
     input  logic [SECTION_WIDTH-1:0]    M,         // Bitwise write mask
-    input  logic [7:0]                  MCT        // Masking coding thermometric   
+    input logic [9:0]                  compute_mask,
+    input logic [1:0]                  sign_8b
+
+    /* sign_8b defines the sign mode for operations on 8-bit data (when mode = 11):
+        - sign_8b = 00: kernel and feature unsigned
+        - sign_8b = 01: kernel signed, feature unsigned
+        - sign_8b = 10: kernel unsigned, feature signed
+        - sign_8b = 11: kernel and feature signed
+    */
 );
 
 
@@ -68,16 +75,18 @@ logic [10:0] valid_bits;
 // Pipeline registers
 logic [3:0]  pipeline_valid;  // Valid flag for each stage
 logic [4:0]  pipeline_row [0:3];
-logic [23:0] pipeline_bias [0:3];
+logic [31:0] pipeline_bias [0:3];
 logic [ROW_WIDTH-1:0] pipeline_kernel [0:3];
 logic [ROW_WIDTH-1:0] pipeline_feature [0:3];
-logic [23:0]  pipeline_result [0:3];
+logic [31:0]  pipeline_result [0:3];
 logic [1:0]  pipeline_mode [0:3];
+logic [1:0]  pipeline_sign_8b [0:1];
+logic [9:0]  pipeline_compute_mask;
 
 // Computation intermediates
 logic [ROW_WIDTH-1:0] masked_kernel;
 logic [ROW_WIDTH-1:0] masked_feature;
-logic [23:0] comp_result;
+logic signed [31:0] comp_result;
 logic [ROW_WIDTH-1:0] xnor_result;
 logic [10:0] popcount;
 logic [1:0] k_val2b;
@@ -86,10 +95,12 @@ logic [3:0] k_val4b;
 logic [3:0] f_val4b;
 logic [7:0] k_val8b;
 logic [7:0] f_val8b;
+logic signed [8:0] k_operand8b;
+logic signed [8:0] f_operand8b;
 
 // Output logic
-logic [23:0] psum;
-logic [3:0] result_4bit;
+logic [31:0] psum;
+logic [7:0] clipped_result;
 
 
 /*******************************************************************************
@@ -103,15 +114,14 @@ assign mem_write_en    = ~COMPE & ~WCSN & ~WEN;
 
 // Valid bits calculation
 always_comb begin
-    valid_bits = 1024 - (MCT * 4);
-    if (valid_bits > 1024) valid_bits = 0;
+    valid_bits = 1024 - pipeline_compute_mask;
 end
 
 // Stage 1: Masking logic
 always_comb begin
     masked_kernel = pipeline_kernel[0];
     masked_feature = pipeline_feature[0];
-    
+
     for (int i = 0; i < 1024; i++) begin
         if (i >= valid_bits) begin
             masked_kernel[i] = 0;
@@ -123,7 +133,7 @@ end
 // Stage 2: Computation logic
 always_comb begin
     comp_result = 0;
-    
+
     case (pipeline_mode[1])
         // 1-bit Mode: XNOR + Popcount
         2'b00: begin
@@ -131,7 +141,7 @@ always_comb begin
             popcount = $countones(xnor_result);
             comp_result = popcount;
         end
-        
+
         // 2-bit Mode: Vector multiplication
         2'b01: begin
             for (int i = 0; i < 512; i++) begin
@@ -140,7 +150,7 @@ always_comb begin
                 comp_result += k_val2b * f_val2b;
             end
         end
-        
+
         // 4-bit Mode: Vector multiplication
         2'b10: begin
             for (int i = 0; i < 256; i++) begin
@@ -149,15 +159,18 @@ always_comb begin
                 comp_result += k_val4b * f_val4b;
             end
         end
-        
+
         // Default: 8-bit Mode (vector multiplication)
         default: begin
              for (int i = 0; i < ROW_WIDTH/8; i++) begin
-                // masked_kernel might have already changed
-                // this step is part of stage 1 of pipeline not 0 !
                  k_val8b = pipeline_kernel[1][i*8 +: 8];
                  f_val8b = pipeline_feature[1][i*8 +: 8];
-                 comp_result += k_val8b * f_val8b;
+                 // sign_8b[0]: kernel signed; sign_8b[1]: feature signed.
+                 k_operand8b = pipeline_sign_8b[1][0]
+                     ? {k_val8b[7], k_val8b} : {1'b0, k_val8b};
+                 f_operand8b = pipeline_sign_8b[1][1]
+                     ? {f_val8b[7], f_val8b} : {1'b0, f_val8b};
+                 comp_result += k_operand8b * f_operand8b;
              end
          end
    endcase
@@ -166,16 +179,16 @@ end
 // Stage 3: Output processing
 always_comb begin
     psum = pipeline_result[2] + pipeline_bias[2];
-    
-    // ReLU + 4-bit quantization
-    if (psum[23]) begin          // Negative value
-        result_4bit = 4'b0;
+
+    // ReLU followed by unsigned 8-bit saturation.
+    if (psum[31]) begin
+        clipped_result = 8'h00;
     end
-    else if (|psum[23:4]) begin  // Value > 15
-        result_4bit = 4'b1111;
+    else if (|psum[30:8]) begin
+        clipped_result = 8'hFF;
     end
-    else begin                   // Value 0-15
-        result_4bit = psum[3:0];
+    else begin                   // Value 0-255
+        clipped_result = psum[7:0];
     end
 end
 
@@ -193,10 +206,10 @@ always_ff @(posedge RCK or negedge RESETn) begin
     else begin
         // Feature buffer loading
         if (~FCSN) feature_buf[FA] <= FD;
-        
+
         // Memory read
         if (mem_read_en) Q <= kernel_mem[RA[6:2]][RA[1:0]];
-        
+
         // Memory write
         if (mem_write_en) begin
             for (int i = 0; i < 256; i++) begin
@@ -213,6 +226,8 @@ always_ff @(posedge RCK or negedge RESETn) begin
         pipeline_row[0] <= 0;
         pipeline_bias[0] <= 0;
         pipeline_mode[0] <= 0;
+        pipeline_sign_8b[0] <= 0;
+        pipeline_compute_mask <= 0;
         pipeline_kernel[0] <= 0;
         pipeline_feature[0] <= 0;
     end
@@ -223,6 +238,8 @@ always_ff @(posedge RCK or negedge RESETn) begin
             pipeline_row[0]   <= RA[6:2];  // 5-bit row index
             pipeline_bias[0]  <= ADDIN;
             pipeline_mode[0]  <= MODE;
+            pipeline_sign_8b[0] <= sign_8b;
+            pipeline_compute_mask <= compute_mask;
 
             if (SECTION_WIDTH == 256) begin
                 pipeline_kernel[0] <= {
@@ -267,6 +284,7 @@ always_ff @(posedge RCK or negedge RESETn) begin
         pipeline_row[1] <= 0;
         pipeline_bias[1] <= 0;
         pipeline_mode[1] <= 0;
+        pipeline_sign_8b[1] <= 0;
         pipeline_kernel[1] <= 0;
         pipeline_feature[1] <= 0;
     end
@@ -275,6 +293,7 @@ always_ff @(posedge RCK or negedge RESETn) begin
         pipeline_row[1]   <= pipeline_row[0];
         pipeline_bias[1]  <= pipeline_bias[0];
         pipeline_mode[1]  <= pipeline_mode[0];
+        pipeline_sign_8b[1] <= pipeline_sign_8b[0];
         pipeline_kernel[1] <= masked_kernel;
         pipeline_feature[1] <= masked_feature;
     end
@@ -304,17 +323,16 @@ always_ff @(posedge RCK or negedge RESETn) begin
         pipeline_valid[3] <= 0;
         pipeline_row[3] <= 0;
         PSOUT <= 0;
-        {RES_OUT, SOUT} <= 0;
+        SOUT <= 0;
         READYN <= 1;
     end
     else begin
         pipeline_valid[3] <= pipeline_valid[2];
         pipeline_row[3]   <= pipeline_row[2];
-        
-        if (pipeline_valid[2]) begin 
+
+        if (pipeline_valid[2]) begin
             PSOUT <= psum;
-            SOUT <= result_4bit[0];
-            RES_OUT <= result_4bit[3:1];
+            SOUT <= clipped_result;
             READYN <= 0;
         end
         else begin

@@ -71,8 +71,8 @@ module tb_cleopatra;
       [0:TEST3_FEATURE_SECTIONS-1]
       [SECTION_WIDTH-1:0] test3_input_tile_t;
 
-  // BIAS: 24-bit unsigned two's-complement bias constant added to every MAC result.
-  localparam logic [23:0] BIAS = 24'hE04300;
+  // BIAS: 32-bit two's-complement bias constant added to every MAC result.
+  localparam logic [31:0] BIAS = 32'hFFE04300;
 
   // Stimulus arrays (filled by $readmemh at simulation start)
   logic [SECTION_WIDTH-1:0] kernel_stim         [0 : NB_KERNEL_ROWS*4-1]; // 128 sections
@@ -115,7 +115,7 @@ module tb_cleopatra;
   logic        FCSN   = 1'b1;
   logic [1:0]  MODE   = 2'b11;
   logic [1:0]  FA     = '0;
-  logic [23:0] ADDIN  = '0;
+  logic [31:0] ADDIN  = '0;
   logic [6:0]  RA     = '0;
   logic [6:0]  WA     = '0;
   logic        RCSN   = 1'b1;
@@ -126,7 +126,8 @@ module tb_cleopatra;
   logic        WCSN   = 1'b1;
   logic        WEN    = 1'b1;
   logic [SECTION_WIDTH-1:0] M   = '1;   // write mask: all ones = full word write
-  logic [7:0]               MCT = '0;   // MCT=0: all 128 elements active (no masking)
+  logic [9:0]               compute_mask = '0;
+  logic [1:0]               sign_8b = 2'b00;
 
   // Input feature FIFO interface (driven by this testbench). 
   logic                     inp_push = 1'b0;  // push inp_data when high and not full
@@ -167,7 +168,8 @@ module tb_cleopatra;
     .WCSN_m0      (sel ? 1'b1 : WCSN),
     .WEN_m0       (sel ? 1'b1 : WEN),
     .M_m0         (M),
-    .MCT_m0       (MCT),
+    .compute_mask_m0(compute_mask),
+    .sign_8b_m0   (sign_8b),
     .COMPE_m1     (sel ? COMPE : 1'b0),
     .FCSN_m1      (sel ? FCSN : 1'b1),
     .MODE_m1      (MODE),
@@ -183,7 +185,8 @@ module tb_cleopatra;
     .WCSN_m1      (sel ? WCSN : 1'b1),
     .WEN_m1       (sel ? WEN : 1'b1),
     .M_m1         (M),
-    .MCT_m1       (MCT),
+    .compute_mask_m1(compute_mask),
+    .sign_8b_m1   (sign_8b),
     .inp_push     (inp_push),
     .inp_data     (inp_data),
     .wgt_push     (wgt_push),
@@ -313,7 +316,7 @@ module tb_cleopatra;
   );
 
     for (int i = 0; i < NB_KERNEL_ROWS ; i++) begin
-        COMPE = 1'b1; MODE = 2'b11; MCT = 8'd0;
+        COMPE = 1'b1; MODE = 2'b11; compute_mask = 10'd0;
         RA    = {5'(i), 2'b00}; ADDIN = BIAS;
         RCSN  = 1'b0; RCSN0 = 1'b0; RCSN1 = 1'b0; RCSN2 = 1'b0; RCSN3 = 1'b0;
         WCSN  = 1'b1; WEN   = 1'b1; FCSN  = 1'b1;

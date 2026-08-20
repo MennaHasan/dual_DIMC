@@ -12,11 +12,11 @@
  * Test 5 — Reset: verify all DUT outputs and memories are zero
  * Test 1 — Kernel write + readback: 32 rows × 4 sections
  * Test 2 — Feature load: 4 × 256-bit sections into feature buffer
- * Test 3 — Full MatVec: all 32 rows, MCT=0, check psout + quant
- * Test 4 — MCT sweep: row 0 at 6 different MCT values
+ * Test 3 — Full MatVec: all 32 rows, compute_mask=0, check psout + clipped
+ * Test 4 — compute_mask sweep: row 0 at 6 different compute_mask values
  *
  * ============================================================
- * TO RUN SIMULATION  
+ * TO RUN SIMULATION
  * ============================================================
  *  make hw-clean
  *  make hw-all
@@ -30,7 +30,7 @@
 `define TB_DIMC_TEST1B   // Optimized kernel write + read-back
 `define TB_DIMC_TEST2    // Feature load
 `define TB_DIMC_TEST3    // Full MatVec (requires Tests 1 and 2)
-`define TB_DIMC_TEST4    // MCT masking sweep (requires Tests 1 and 2)
+`define TB_DIMC_TEST4    // compute_mask masking sweep (requires Tests 1 and 2)
 // ─────────────────────────────────────────────────────────────────────────
 
 `timescale 1ns/1ps
@@ -54,21 +54,22 @@ module tb_DIMC;
   // the simulation runs; gen_stim.py writes them to the current directory.
   parameter KERNEL_WEIGHTS_FILE        = "stimuli/dimc_tests/kernel_weights.txt";       // File 1
   parameter FEATURE_VECTOR_FILE        = "stimuli/dimc_tests/feature_vector.txt";       // File 2
-  parameter GOLDEN_MATVEC_FILE          = "stimuli/dimc_tests/golden_4bit.txt";         // File 3
-  parameter GOLDEN_PSOUT_FILE           = "stimuli/dimc_tests/golden_psum_24bit.txt";   // File 4
-  parameter GOLDEN_DOT_PRODUCT_MCT_FILE = "stimuli/dimc_tests/golden_mct_4bit.txt";     // File 5
-  parameter GOLDEN_PSOUT_MCT_FILE       = "stimuli/dimc_tests/golden_psum_mct_24bit.txt"; // File 6
+  parameter GOLDEN_MATVEC_FILE          = "stimuli/dimc_tests/golden_clipped_8bit.txt";
+  parameter GOLDEN_PSOUT_FILE           = "stimuli/dimc_tests/golden_psum_32bit.txt";
+  parameter GOLDEN_COMPUTE_MASK_FILE    = "stimuli/dimc_tests/golden_compute_mask_8bit.txt";
+  parameter GOLDEN_PSOUT_MASK_FILE      = "stimuli/dimc_tests/golden_psum_compute_mask_32bit.txt";
 
-  // NB_MCT_VALS: how many distinct MCT values are swept in Test 4.
-  // Must equal len(MCT_VALS) in gen_stim.py.
-  parameter NB_MCT_VALS = 6;
+  // NB_COMPUTE_MASK_VALS: how many distinct compute_mask values are swept in Test 4.
+  // Must equal len(COMPUTE_MASK_VALS) in gen_stim.py.
+  parameter NB_COMPUTE_MASK_VALS = 6;
 
-  localparam logic [23:0] BIAS = 24'hE04300;
+  localparam logic [31:0] BIAS = 32'hFFE04300;
 
-  // MCT_VALS: the six threshold values swept in Test 4.
+  // COMPUTE_MASK_VALS: the six threshold values swept in Test 4.
   // Each value trims a different number of byte-elements from the computation.
-  // MUST match MCT_VALS in gen_stim.py.
-  localparam logic [7:0] MCT_VALS [NB_MCT_VALS] = '{8'd0, 8'd128, 8'd192, 8'd224, 8'd240, 8'd248};
+  // MUST match COMPUTE_MASK_VALS in gen_stim.py.
+  localparam logic [9:0] COMPUTE_MASK_VALS [NB_COMPUTE_MASK_VALS] =
+      '{10'd0, 10'd512, 10'd768, 10'd896, 10'd960, 10'd992};
 
   // Stimulus and golden arrays
   // These are filled by $readmemh at the start of the test sequence.
@@ -78,13 +79,13 @@ module tb_DIMC;
   //   feature_stim[0] = bits [255:0], feature_stim[3] = bits [1023:768].
   logic [SECTION_WIDTH-1:0] feature_stim [0 : 3];
 
-  logic [7:0]  golden_4bit  [0 : NB_KERNEL_ROWS-1];
+  logic [7:0]  golden_clipped  [0 : NB_KERNEL_ROWS-1];
 
-  logic [23:0] golden_psout   [0 : NB_KERNEL_ROWS-1];
+  logic [31:0] golden_psout   [0 : NB_KERNEL_ROWS-1];
 
-  logic [7:0]  golden_mct     [0 : NB_MCT_VALS-1];
+  logic [7:0]  golden_compute_mask [0 : NB_COMPUTE_MASK_VALS-1];
 
-  logic [23:0] golden_psout_mct[0 : NB_MCT_VALS-1];
+  logic [31:0] golden_psout_compute_mask[0 : NB_COMPUTE_MASK_VALS-1];
 
   // Timing parameters
   localparam time ClkPeriod = 10ns;
@@ -103,15 +104,13 @@ module tb_DIMC;
   logic        COMPE  = 1'b0;
   logic        FCSN   = 1'b1;
   logic [1:0]  MODE   = 2'b11;
-  
+
   logic [1:0]               FA    = '0;
   logic [SECTION_WIDTH-1:0] FD    = '0;
-  
-  logic [23:0]              ADDIN = '0;
-  logic                     SOUT;
 
-  logic [2:0]               RES_OUT;
-  logic [23:0]              PSOUT;
+  logic [31:0]              ADDIN = '0;
+  logic [7:0]               SOUT;
+  logic [31:0]              PSOUT;
   logic [SECTION_WIDTH-1:0] Q;
   logic [SECTION_WIDTH-1:0] D     = '0;
   logic [6:0]               RA    = '0;
@@ -130,7 +129,8 @@ module tb_DIMC;
 
   logic [SECTION_WIDTH-1:0] M   = '1;
 
-  logic [7:0]               MCT = '0;
+  logic [9:0]               compute_mask = '0;
+  logic [1:0]               sign_8b = 2'b00;
 
   // End-of-test flag
   logic eot = 1'b0;
@@ -150,7 +150,6 @@ module tb_DIMC;
     .FD      (FD),
     .ADDIN   (ADDIN),
     .SOUT    (SOUT),
-    .RES_OUT (RES_OUT),
     .PSOUT   (PSOUT),
     .Q       (Q),
     .D       (D),
@@ -165,7 +164,8 @@ module tb_DIMC;
     .WCSN    (WCSN),
     .WEN     (WEN),
     .M       (M),
-    .MCT     (MCT)
+    .compute_mask(compute_mask),
+    .sign_8b (sign_8b)
   );
 
   // CLOCK GENERATION AND RESET
@@ -214,7 +214,7 @@ module tb_DIMC;
       WCSN = 1'b1; WEN = 1'b1;    // deassert; clear data bus
       D = '0;
   endtask
-  
+
   task automatic read_kernel(
     input  [4:0]               row,    // row to read
     input  [1:0]               sec,    // section within that row (0-3)
@@ -245,16 +245,17 @@ task automatic load_feature(
 
   task automatic compute_and_capture(
     input  [4:0]  row,      // kernel row to compute dot product for (0-31)
-    input  [23:0] bias,     // 24-bit signed bias added at Stage 3
-    input  [7:0]  mct_val,  // MCT value: controls how many elements are active
-    output [23:0] psout,    // captured PSOUT (raw psum before ReLU)
-    output [3:0]  quant     // captured {RES_OUT, SOUT} (4-bit quantized result)
+    input  [31:0] bias,
+    input  [9:0]  compute_mask_val,
+    output [31:0] psout,
+    output [7:0]  clipped
   );
     // --- Cycle N: assert compute trigger for exactly one cycle ---
     @(posedge RCK); #ApplTime;
     COMPE = 1'b1;                             // trigger the pipeline
     MODE  = 2'b11;                            // 8-bit MAC mode
-    MCT   = mct_val;                          // set masking threshold
+    compute_mask = compute_mask_val;
+    sign_8b = 2'b00;
     RA    = {row, 2'b00};                     // row address; section bits ignored in compute mode
     ADDIN = bias;                             // bias to add at Stage 3
     RCSN  = 1'b0; RCSN0 = 1'b0; RCSN1 = 1'b0; RCSN2 = 1'b0; RCSN3 = 1'b0;  // enable all sections
@@ -266,7 +267,7 @@ task automatic load_feature(
     RCSN  = 1'b1; RCSN0 = 1'b1; RCSN1 = 1'b1; RCSN2 = 1'b1; RCSN3 = 1'b1;
 
     // --- Cycles N+2 and N+3: pipeline progresses through Stages 1 and 2 ---
-    @(posedge RCK);   // Stage 1: MCT masking
+    @(posedge RCK);   // Stage 1: computation masking
     @(posedge RCK);   // Stage 2: MAC accumulation
 
     // --- Cycle N+4: Stage 3 completes; READYN should now be LOW ---
@@ -276,15 +277,15 @@ task automatic load_feature(
 
     // Capture results while Stage 3 outputs are stable
     psout = PSOUT;
-    quant = {RES_OUT, SOUT};    // reassemble 4-bit result from its two output ports
+    clipped = SOUT;
   endtask
 
-  
+
   task automatic compute_all_rows_pipelined(
-    input  [23:0] bias,
-    input  [7:0]  mct_val,
-    output [23:0] psout_out [0:NB_KERNEL_ROWS-1],
-    output [3:0]  quant_out [0:NB_KERNEL_ROWS-1]
+    input  [31:0] bias,
+    input  [9:0]  compute_mask_val,
+    output [31:0] psout_out [0:NB_KERNEL_ROWS-1],
+    output [7:0]  clipped_out [0:NB_KERNEL_ROWS-1]
   );
     for (int i = 0; i < NB_KERNEL_ROWS + 4; i++) begin
       @(posedge RCK); #ApplTime;
@@ -292,7 +293,8 @@ task automatic load_feature(
       if (i < NB_KERNEL_ROWS) begin
         COMPE = 1'b1;
         MODE  = 2'b11;
-        MCT   = mct_val;
+        compute_mask = compute_mask_val;
+        sign_8b = 2'b00;
         RA    = {5'(i), 2'b00};
         ADDIN = bias;
         RCSN  = 1'b0; RCSN0 = 1'b0; RCSN1 = 1'b0; RCSN2 = 1'b0; RCSN3 = 1'b0;
@@ -302,14 +304,14 @@ task automatic load_feature(
         RCSN  = 1'b1; RCSN0 = 1'b1; RCSN1 = 1'b1; RCSN2 = 1'b1; RCSN3 = 1'b1;
       end
 
-      // when i = ? -- exactly 5 pos edges already happened since the request was made 
-      // as per the test bench, posedge happends and then 
+      // when i = ? -- exactly 5 pos edges already happened since the request was made
+      // as per the test bench, posedge happends and then
       if (i >= 5) begin
         #(TestTime - ApplTime);
         if (READYN !== 1'b0)
           $error("[TB] READYN not low at pipelined result cycle for row %0d", i - 5);
         psout_out[i - 5] = PSOUT;
-        quant_out[i - 5] = {RES_OUT, SOUT};
+        clipped_out[i - 5] = SOUT;
       end
     end
 
@@ -318,7 +320,7 @@ task automatic load_feature(
     RCSN  = 1'b1; RCSN0 = 1'b1; RCSN1 = 1'b1; RCSN2 = 1'b1; RCSN3 = 1'b1;
   endtask
 
- 
+
   // PASS / FAIL COUNTERS
   int pass_count = 0;
   int fail_count = 0;
@@ -329,23 +331,23 @@ task automatic load_feature(
   initial begin
     // Local variables used across multiple tests
     logic [SECTION_WIDTH-1:0] rd_data;                 // captured kernel readback data
-    logic [23:0]              psout, psout_expected;   // psum from DUT and golden
-    logic [3:0]               quant, quant_expected;   // 4-bit result from DUT and golden
-    logic [23:0]              psout_pipe [0:NB_KERNEL_ROWS-1];  // per-row psum captured by Test 6
-    logic [3:0]               quant_pipe [0:NB_KERNEL_ROWS-1]; // per-row quant captured by Test 6
+    logic [31:0]              psout, psout_expected;
+    logic [7:0]               clipped, clipped_expected;
+    logic [31:0]              psout_pipe [0:NB_KERNEL_ROWS-1];
+    logic [7:0]               clipped_pipe [0:NB_KERNEL_ROWS-1];
 
     // Wait for reset to release (driven by the clock initial block)
     @(posedge RESETn);
     // One extra idle cycle so all DUT output registers settle cleanly from reset
     @(posedge RCK);
 
-    
+
     $readmemh(KERNEL_WEIGHTS_FILE,        kernel_stim);    // 128 entries: 32 rows × 4 sections
     $readmemh(FEATURE_VECTOR_FILE,        feature_stim);   //   4 entries: one per 256-bit section
-    $readmemh(GOLDEN_MATVEC_FILE,          golden_4bit);  //  32 entries: expected 4-bit result per row
-    $readmemh(GOLDEN_PSOUT_FILE,           golden_psout);   //  32 entries: expected 24-bit psum per row
-    $readmemh(GOLDEN_DOT_PRODUCT_MCT_FILE, golden_mct);     //   6 entries: 4-bit result for row 0 per MCT
-    $readmemh(GOLDEN_PSOUT_MCT_FILE,       golden_psout_mct); // 6 entries: 24-bit psum for row 0 per MCT
+    $readmemh(GOLDEN_MATVEC_FILE,          golden_clipped);  // 32 expected clipped 8-bit results
+    $readmemh(GOLDEN_PSOUT_FILE,           golden_psout);   //  32 entries: expected 32-bit psum per row
+    $readmemh(GOLDEN_COMPUTE_MASK_FILE, golden_compute_mask);
+    $readmemh(GOLDEN_PSOUT_MASK_FILE, golden_psout_compute_mask);
 
 `ifdef TB_DIMC_TEST5
     // =======================================================================
@@ -358,7 +360,7 @@ task automatic load_feature(
     // Checks performed:
     //   READYN == 1   (no spurious ready signal)
     //   PSOUT  == 0   (psum register cleared)
-    //   {RES_OUT, SOUT} == 0  (quantized output cleared)
+    //   SOUT == 0      (clipped output cleared)
     //   Q == 0        (memory read output cleared)
     //   feature_buf[0..3] == 0  (feature buffer cleared, via hierarchical ref)
     //   kernel_mem[0..31][0..3] == 0  (SRAM cleared, via hierarchical ref)
@@ -374,8 +376,8 @@ task automatic load_feature(
     begin
       automatic logic reset_ok = 1'b1;
       if (READYN !== 1'b1)         reset_ok = 1'b0;   // must be NOT-ready
-      if (PSOUT  !== 24'h0)        reset_ok = 1'b0;   // psum cleared
-      if ({RES_OUT,SOUT} !== 4'h0) reset_ok = 1'b0;   // quant output cleared
+      if (PSOUT !== 32'h0) reset_ok = 1'b0;
+      if (SOUT  !== 8'h0)  reset_ok = 1'b0;
       if (Q !== '0)                reset_ok = 1'b0;   // memory read port cleared
       // Check feature buffer via hierarchical reference (no external read port)
       for (int s = 0; s < 4; s++)
@@ -470,32 +472,32 @@ task automatic load_feature(
 
 `ifdef TB_DIMC_TEST3
     // =======================================================================
-    // TEST 3: FULL MATRIX-VECTOR MULTIPLICATION (32 rows, MCT=0)
+    // TEST 3: FULL MATRIX-VECTOR MULTIPLICATION (32 rows, compute_mask=0)
     // =======================================================================
     // Exercises the full MAC pipeline for every kernel row.
     //
     //   Computes for each row r:
-    //     psum[r]  = dot(kernel[r], feature, MCT=0) + BIAS   (24-bit, all 128 elements active)
-    //     quant[r] = ReLU4(psum[r])                           (4-bit clipped result)
+    //     psum[r]  = dot(kernel[r], feature, compute_mask=0) + BIAS   (32-bit, all 128 elements active)
+    //     clipped[r] = saturate_unsigned_8bit(psum[r])
     //
     // Both outputs must match the golden files produced by gen_stim.py:
-    //   golden_psout[r]  — 24-bit psum before ReLU (from golden_psout.txt)
-    //   golden_4bit[r] — 4-bit quantized result (from golden_4bit.txt)
+    //   golden_psout[r]  — 32-bit psum before ReLU (from golden_psout.txt)
+    //   golden_clipped[r] — saturated 8-bit result
     //
-    // MCT=0 means no masking: all 128 byte-elements of every row participate.
+    // compute_mask=0 means no masking: all 128 byte-elements of every row participate.
     // The kernel and feature are already loaded by Tests 1 and 2.
     // =======================================================================
     $display("[TB] Test 3: Full matrix-vector multiplication (32 rows)");
     begin
       automatic int test_fail = 0;
       for (int r = 0; r < NB_KERNEL_ROWS; r++) begin
-        compute_and_capture(5'(r), BIAS, 8'd0, psout, quant);
-        // Check both the raw psum and the quantized output independently
-        if (psout !== golden_psout[r] || quant !== golden_4bit[r][3:0]) begin
+        compute_and_capture(5'(r), BIAS, 10'd0, psout, clipped);
+        // Check both the raw psum and clipped output independently.
+        if (psout !== golden_psout[r] || clipped !== golden_clipped[r]) begin
           if (psout !== golden_psout[r])
-            $error("[TB] Test3 row%0d: psout got 0x%06h, expected 0x%06h", r, psout, golden_psout[r]);
-          if (quant !== golden_4bit[r][3:0])
-            $error("[TB] Test3 row%0d: quant got %0d, expected %0d", r, quant, golden_4bit[r][3:0]);
+            $error("[TB] Test3 row%0d: psout got 0x%08h, expected 0x%08h", r, psout, golden_psout[r]);
+          if (clipped !== golden_clipped[r])
+            $error("[TB] Test3 row%0d: clipped got %0d, expected %0d", r, clipped, golden_clipped[r]);
           test_fail++;
         end
       end
@@ -506,40 +508,40 @@ task automatic load_feature(
 
 `ifdef TB_DIMC_TEST4
     // =======================================================================
-    // TEST 4: MCT MASKING SWEEP
+    // TEST 4: compute_mask MASKING SWEEP
     // =======================================================================
-    // Verifies that the MCT masking hardware correctly trims the number of
+    // Verifies that the compute_mask masking hardware correctly trims the number of
     // active byte-elements in the dot product for row 0.
     //
-    // Row 0 is computed once for each of the 6 MCT values in MCT_VALS:
-    //   MCT=  0 → 128 active elements (full row, no masking)
-    //   MCT=128 →  64 active elements (lower half of the row)
-    //   MCT=192 →  32 active elements (first section only)
-    //   MCT=224 →  16 active elements
-    //   MCT=240 →   8 active elements
-    //   MCT=248 →   4 active elements (almost fully masked)
+    // Row 0 is computed once for each of the 6 compute_mask values in COMPUTE_MASK_VALS:
+    //   compute_mask=  0 → 128 active elements (full row, no masking)
+    //   compute_mask=512 →  64 active elements (lower half of the row)
+    //   compute_mask=768 →  32 active elements (first section only)
+    //   compute_mask=896 →  16 active elements
+    //   compute_mask=960 →   8 active elements
+    //   compute_mask=992 →   4 active elements (almost fully masked)
     //
-    // Expected results come from golden_dot_product_mct.txt (4-bit quant)
-    // and golden_psout_mct.txt (24-bit psum before ReLU), both generated
-    // by gen_stim.py using the same MCT masking logic as the DUT.
+    // Expected results include the clipped output and the 32-bit pre-ReLU sum.
+    // and golden_psout_compute_mask.txt (32-bit psum before ReLU), both generated
+    // by gen_stim.py using the same compute_mask masking logic as the DUT.
     //
     // The kernel and feature are still in the DUT from Tests 1 and 2.
     // =======================================================================
-    $display("[TB] Test 4: MCT masking sweep (%0d values, row 0)", NB_MCT_VALS);
+    $display("[TB] Test 4: compute-mask sweep (%0d values, row 0)", NB_COMPUTE_MASK_VALS);
     begin
-      automatic logic [23:0] psout;
-      automatic logic [3:0]  quant;
+      automatic logic [31:0] psout;
+      automatic logic [7:0]  clipped;
 
       automatic int test_fail = 0;
-      for (int m = 0; m < NB_MCT_VALS; m++) begin
-        compute_and_capture(5'd0, BIAS, MCT_VALS[m], psout, quant);
-        if (psout !== golden_psout_mct[m] || quant !== golden_mct[m][3:0]) begin
-          if (psout !== golden_psout_mct[m])
-            $error("[TB] Test4 MCT=0x%02h row0: psout got 0x%06h, expected 0x%06h",
-                   MCT_VALS[m], psout, golden_psout_mct[m]);
-          if (quant !== golden_mct[m][3:0])
-            $error("[TB] Test4 MCT=0x%02h row0: quant got %0d, expected %0d",
-                   MCT_VALS[m], quant, golden_mct[m][3:0]);
+      for (int m = 0; m < NB_COMPUTE_MASK_VALS; m++) begin
+        compute_and_capture(5'd0, BIAS, COMPUTE_MASK_VALS[m], psout, clipped);
+        if (psout !== golden_psout_compute_mask[m] || clipped !== golden_compute_mask[m]) begin
+          if (psout !== golden_psout_compute_mask[m])
+            $error("[TB] Test4 compute_mask=%0d row0: psout got 0x%08h, expected 0x%08h",
+                   COMPUTE_MASK_VALS[m], psout, golden_psout_compute_mask[m]);
+          if (clipped !== golden_compute_mask[m])
+            $error("[TB] Test4 compute_mask=%0d: clipped got %0d, expected %0d",
+                   COMPUTE_MASK_VALS[m], clipped, golden_compute_mask[m]);
           test_fail++;
         end
       end
@@ -548,7 +550,7 @@ task automatic load_feature(
     end
 `endif // TB_DIMC_TEST4
 
-    
+
     // FINAL SUMMARY
     $display("[TB] ================================================");
     $display("[TB] RESULTS: %0d PASSED, %0d FAILED", pass_count, fail_count);
@@ -566,7 +568,7 @@ task automatic load_feature(
     $dumpvars(0, tb_DIMC);
   end
 
-  
+
   /** WATCHDOG TIMER **/
   // Kills the simulation after 50 µs (5000 clock cycles at 100 MHz).
   // trip always indicates a bug.

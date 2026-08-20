@@ -23,7 +23,7 @@
 //                          independent WCSN/WEN controls whether it writes.
 // FD (feature data):       inp_fifo.data_out → both macros; each macro's
 //                          independent FCSN controls whether it loads.
-// 24-bit psum (PSOUT):     sel-selected macro → out_fifo.
+// 32-bit psum (PSOUT):     sel-selected macro → out_fifo.
 //
 
 `timescale 1ns/1ps
@@ -48,28 +48,30 @@ module spatz_DIMC_dual #(
     // Independent DIMC 0 control inputs
     input  logic                     COMPE_m0, FCSN_m0,
     input  logic [1:0]               MODE_m0, FA_m0,
-    input  logic [23:0]              ADDIN_m0,
+    input  logic [31:0]              ADDIN_m0,
     input  logic [6:0]               RA_m0, WA_m0,
     input  logic                     RCSN_m0,
     input  logic                     RCSN0_m0, RCSN1_m0, RCSN2_m0, RCSN3_m0,
     input  logic                     WCSN_m0, WEN_m0,
     input  logic [SECTION_WIDTH-1:0] M_m0,
-    input  logic [7:0]               MCT_m0,
+    input  logic [9:0]               compute_mask_m0,
+    input  logic [1:0]               sign_8b_m0,
 
     // Independent DIMC 1 control inputs
     input  logic                     COMPE_m1, FCSN_m1,
     input  logic [1:0]               MODE_m1, FA_m1,
-    input  logic [23:0]              ADDIN_m1,
+    input  logic [31:0]              ADDIN_m1,
     input  logic [6:0]               RA_m1, WA_m1,
     input  logic                     RCSN_m1,
     input  logic                     RCSN0_m1, RCSN1_m1, RCSN2_m1, RCSN3_m1,
     input  logic                     WCSN_m1, WEN_m1,
     input  logic [SECTION_WIDTH-1:0] M_m1,
-    input  logic [7:0]               MCT_m1,
+    input  logic [9:0]               compute_mask_m1,
+    input  logic [1:0]               sign_8b_m1,
 
     // Outputs — muxed from the CURRENTLY SELECTED DIMC.
     output logic                     READYN,
-    output logic [23:0]              PSOUT,
+    output logic [31:0]              PSOUT,
 
     // Input FIFO 
     input  logic                     inp_push,      
@@ -85,7 +87,7 @@ module spatz_DIMC_dual #(
 
     // Output FIFO
     input  logic                     out_pop,
-    output logic [23:0]              out_data,
+    output logic [31:0]              out_data,
     output logic                     out_full,
     output logic                     out_empty
 );
@@ -142,11 +144,11 @@ module spatz_DIMC_dual #(
     // Output FIFO
     // =========================================================================
     logic        out_push;
-    logic [23:0] out_wdata;
+    logic [31:0] out_wdata;
 
     fifo_v3 #(
         .FALL_THROUGH (1'b0),
-        .DATA_WIDTH   (24),
+        .DATA_WIDTH   (32),
         .DEPTH        (OUT_FIFO_DEPTH)
     ) u_out_fifo (
         .clk_i      (clk),
@@ -168,14 +170,11 @@ module spatz_DIMC_dual #(
     // Control inputs are independent. FIFO-provided D and FD remain shared.
 
     logic [1:0]      m_readyn;
-    logic [1:0]      m_sout;
-    logic [1:0][2:0] m_res_out;
-    logic [1:0][23:0]              m_psout; // per-macro PSOUT, muxed by sel into the PSOUT port
+    logic [1:0][7:0] m_sout;
+    logic [1:0][31:0]              m_psout; // per-macro PSOUT, muxed by sel into the PSOUT port
     logic [1:0][SECTION_WIDTH-1:0] m_q;     // per-macro Q,     muxed by sel into the internal Q signal below
 
     logic [SECTION_WIDTH-1:0] Q;
-    logic                     SOUT;
-    logic [2:0]               RES_OUT;
 
     // =========================================================================
     // DIMC macro 0 instantiation
@@ -192,7 +191,6 @@ module spatz_DIMC_dual #(
         .FD      (inp_rdata),
         .ADDIN   (ADDIN_m0),
         .SOUT    (m_sout[0]),
-        .RES_OUT (m_res_out[0]),
         .PSOUT   (m_psout[0]),
         .Q       (m_q[0]),
         .D       (wgt_rdata),
@@ -207,7 +205,8 @@ module spatz_DIMC_dual #(
         .WCSN    (WCSN_m0),
         .WEN     (WEN_m0),
         .M       (M_m0),
-        .MCT     (MCT_m0)
+        .compute_mask(compute_mask_m0),
+        .sign_8b (sign_8b_m0)
     );
 
     // =========================================================================
@@ -225,7 +224,6 @@ module spatz_DIMC_dual #(
         .FD      (inp_rdata),
         .ADDIN   (ADDIN_m1),
         .SOUT    (m_sout[1]),
-        .RES_OUT (m_res_out[1]),
         .PSOUT   (m_psout[1]),
         .Q       (m_q[1]),
         .D       (wgt_rdata),
@@ -240,7 +238,8 @@ module spatz_DIMC_dual #(
         .WCSN    (WCSN_m1),
         .WEN     (WEN_m1),
         .M       (M_m1),
-        .MCT     (MCT_m1)
+        .compute_mask(compute_mask_m1),
+        .sign_8b (sign_8b_m1)
     );
 
     // =========================================================================
@@ -258,11 +257,9 @@ module spatz_DIMC_dual #(
     // =========================================================================
     always_comb begin
         // --- Output mux: expose selected macro's outputs (READYN/PSOUT as
-        // ports; Q/SOUT/RES_OUT as internal signals only) ---
+        // ports; Q remains an internal selected signal) ---
         READYN  = m_readyn[sel];
         Q       = m_q[sel];
-        SOUT    = m_sout[sel];
-        RES_OUT = m_res_out[sel];
         PSOUT   = m_psout[sel];
 
         // --- FIFO auto-management ---

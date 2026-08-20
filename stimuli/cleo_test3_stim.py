@@ -21,9 +21,8 @@ p = 8
 ELEMENT_BITS = 8
 N_ELEMENTS = N // ELEMENT_BITS
 UINT8_MAX = (1 << ELEMENT_BITS) - 1
-UINT24_MAX = (1 << 24) - 1
 UINT32_MAX = (1 << 32) - 1
-BIAS = 0xE04300
+BIAS = -2_080_000
 
 
 
@@ -235,7 +234,7 @@ def calculate_matmul(
                         )
                     )
                     + bias
-                ) & UINT24_MAX
+                ) & UINT32_MAX
                 for l_index in range(num_l_tiles)
             ) & UINT32_MAX
             for col in range(input_cols)

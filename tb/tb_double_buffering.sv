@@ -58,7 +58,7 @@ module tb_double_buffering;
   localparam int DB_FEATURE_ELEMENTS = DB_L * DB_N_ELEMENTS * DB_Q * DB_P;
 
   localparam int NUM_SECTIONS = 1024 / SECTION_WIDTH;
-  localparam logic [23:0] BIAS = 24'hE04300;
+  localparam logic [31:0] BIAS = 32'hFFE04300;
 
 
 
@@ -102,26 +102,28 @@ module tb_double_buffering;
   // for m0
   logic COMPE_m0 = 1'b0, FCSN_m0 = 1'b1;
   logic [1:0] MODE_m0 = 2'b11, FA_m0 = '0;
-  logic [23:0] ADDIN_m0 = '0;
+  logic [31:0] ADDIN_m0 = '0;
   logic [6:0] RA_m0 = '0, WA_m0 = '0;
   logic RCSN_m0 = 1'b1;
   logic RCSN0_m0 = 1'b1, RCSN1_m0 = 1'b1;
   logic RCSN2_m0 = 1'b1, RCSN3_m0 = 1'b1;
   logic WCSN_m0 = 1'b1, WEN_m0 = 1'b1;
   logic [SECTION_WIDTH-1:0] M_m0 = '1;
-  logic [7:0] MCT_m0 = '0;
+  logic [9:0] compute_mask_m0 = '0;
+  logic [1:0] sign_8b_m0 = 2'b00;
   
   // for m1
   logic COMPE_m1 = 1'b0, FCSN_m1 = 1'b1;
   logic [1:0] MODE_m1 = 2'b11, FA_m1 = '0;
-  logic [23:0] ADDIN_m1 = '0;
+  logic [31:0] ADDIN_m1 = '0;
   logic [6:0] RA_m1 = '0, WA_m1 = '0;
   logic RCSN_m1 = 1'b1;
   logic RCSN0_m1 = 1'b1, RCSN1_m1 = 1'b1;
   logic RCSN2_m1 = 1'b1, RCSN3_m1 = 1'b1;
   logic WCSN_m1 = 1'b1, WEN_m1 = 1'b1;
   logic [SECTION_WIDTH-1:0] M_m1 = '1;
-  logic [7:0] MCT_m1 = '0;
+  logic [9:0] compute_mask_m1 = '0;
+  logic [1:0] sign_8b_m1 = 2'b00;
 
   // for fifos
   logic inp_push = 1'b0;
@@ -131,10 +133,10 @@ module tb_double_buffering;
   logic [SECTION_WIDTH-1:0] wgt_data = '0;
   logic wgt_full, wgt_empty;
   logic out_pop = 1'b0;
-  logic [23:0] out_data;
+  logic [31:0] out_data;
   logic out_full, out_empty;
   logic READYN;
-  logic [23:0] PSOUT;
+  logic [31:0] PSOUT;
   logic clear = 1'b0;
   logic [31:0] acc_o [0:255];
 
@@ -162,10 +164,12 @@ module tb_double_buffering;
     .clk, .rst_n, .sel,
     .COMPE_m0, .FCSN_m0, .MODE_m0, .FA_m0, .ADDIN_m0,
     .RA_m0, .WA_m0, .RCSN_m0, .RCSN0_m0, .RCSN1_m0,
-    .RCSN2_m0, .RCSN3_m0, .WCSN_m0, .WEN_m0, .M_m0, .MCT_m0,
+    .RCSN2_m0, .RCSN3_m0, .WCSN_m0, .WEN_m0, .M_m0,
+    .compute_mask_m0, .sign_8b_m0,
     .COMPE_m1, .FCSN_m1, .MODE_m1, .FA_m1, .ADDIN_m1,
     .RA_m1, .WA_m1, .RCSN_m1, .RCSN0_m1, .RCSN1_m1,
-    .RCSN2_m1, .RCSN3_m1, .WCSN_m1, .WEN_m1, .M_m1, .MCT_m1,
+    .RCSN2_m1, .RCSN3_m1, .WCSN_m1, .WEN_m1, .M_m1,
+    .compute_mask_m1, .sign_8b_m1,
     .inp_push, .inp_data,
     .wgt_push, .wgt_data,
     .clear, .acc_o
@@ -299,7 +303,7 @@ module tb_double_buffering;
         // Vector 0 is already in macro 0; vectors 1..7 are at the FIFO head.
         for (int vector_index = 0; vector_index < DB_P; vector_index++) begin
           for (int row = 0; row < NB_KERNEL_ROWS; row++) begin
-            COMPE_m0 = 1'b1; MODE_m0 = 2'b11; MCT_m0 = 8'd0;
+            COMPE_m0 = 1'b1; MODE_m0 = 2'b11; compute_mask_m0 = 10'd0;
             RA_m0 = {5'(row), 2'b00}; ADDIN_m0 = BIAS;
             RCSN_m0 = 1'b0; RCSN0_m0 = 1'b0; RCSN1_m0 = 1'b0;
             RCSN2_m0 = 1'b0; RCSN3_m0 = 1'b0;
@@ -414,7 +418,7 @@ module tb_double_buffering;
       begin : compute_current_tile_on_m1
         for (int vector_index = 0; vector_index < DB_P; vector_index++) begin
           for (int row = 0; row < NB_KERNEL_ROWS; row++) begin
-            COMPE_m1 = 1'b1; MODE_m1 = 2'b11; MCT_m1 = 8'd0;
+            COMPE_m1 = 1'b1; MODE_m1 = 2'b11; compute_mask_m1 = 10'd0;
             RA_m1 = {5'(row), 2'b00}; ADDIN_m1 = BIAS;
             RCSN_m1 = 1'b0; RCSN0_m1 = 1'b0; RCSN1_m1 = 1'b0;
             RCSN2_m1 = 1'b0; RCSN3_m1 = 1'b0;
@@ -518,7 +522,7 @@ module tb_double_buffering;
     // vector's four sections from the FIFO before starting the next MatVec.
     for (int vector_index = 0; vector_index < DB_P; vector_index++) begin
       for (int row = 0; row < NB_KERNEL_ROWS; row++) begin
-        COMPE_m0 = 1'b1; MODE_m0 = 2'b11; MCT_m0 = 8'd0;
+        COMPE_m0 = 1'b1; MODE_m0 = 2'b11; compute_mask_m0 = 10'd0;
         RA_m0    = {5'(row), 2'b00}; ADDIN_m0 = BIAS;
         RCSN_m0  = 1'b0; RCSN0_m0 = 1'b0; RCSN1_m0 = 1'b0;
         RCSN2_m0 = 1'b0; RCSN3_m0 = 1'b0;
@@ -568,7 +572,7 @@ module tb_double_buffering;
     // vector's four sections from the FIFO before starting the next MatVec.
     for (int vector_index = 0; vector_index < DB_P; vector_index++) begin
       for (int row = 0; row < NB_KERNEL_ROWS; row++) begin
-        COMPE_m1 = 1'b1; MODE_m1 = 2'b11; MCT_m1 = 8'd0;
+        COMPE_m1 = 1'b1; MODE_m1 = 2'b11; compute_mask_m1 = 10'd0;
         RA_m1    = {5'(row), 2'b00}; ADDIN_m1 = BIAS;
         RCSN_m1  = 1'b0; RCSN0_m1 = 1'b0; RCSN1_m1 = 1'b0;
         RCSN2_m1 = 1'b0; RCSN3_m1 = 1'b0;
