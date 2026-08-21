@@ -46,7 +46,8 @@ update-ips: $(BENDER)
 
 # ── Generate stimulus ─────────────────────────────────────────
 stim:
-	python3 $(STIM_DIR)/generate_stim.py --outdir $(STIM_DIR)
+	python3 $(STIM_DIR)/spatz_dimc_stim.py --outdir $(STIM_DIR)
+	python3 $(STIM_DIR)/cleo_tests_1_2_stim.py --outdir $(STIM_DIR)
 	python3 $(STIM_DIR)/cleo_test3_stim.py
 	python3 $(STIM_DIR)/double_buffering_stim.py
 

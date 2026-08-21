@@ -13,7 +13,7 @@ module spatz_DIMC  #(
 
     // Control Signals
     output logic                        READYN,     // Active-low ready (output valid)
-    input  logic                        COMPE,      // Operation mode (1=compute, -
+    input  logic                        COMPE,      // Operation mode (1=compute, 0=memory)
     input  logic                        FCSN,       // Feature buffer chip select (active-low)
     input  logic [1:0]                  MODE,       // Bit resolution (0=1b, 1=2b, 2=4b, 3=8b)
 
@@ -39,10 +39,9 @@ module spatz_DIMC  #(
     input  logic                        WEN,        // Write enable (active-low)
 
     // Masking Signals
-    input  logic [SECTION_WIDTH-1:0]    M,         // Bitwise write mask
-    input logic [9:0]                  compute_mask,
-    input logic [1:0]                  sign_8b
-
+    input  logic [SECTION_WIDTH-1:0]    M,          // Bitwise write mask
+    input  logic [9:0]                  compute_mask, // when it's set to x, module masks the x most-significant bits
+    input  logic [1:0]                  sign_8b
     /* sign_8b defines the sign mode for operations on 8-bit data (when mode = 11):
         - sign_8b = 00: kernel and feature unsigned
         - sign_8b = 01: kernel signed, feature unsigned
@@ -56,7 +55,7 @@ module spatz_DIMC  #(
 * Derived Parameters
 *******************************************************************************/
 localparam NUM_SECTIONS = 1024/SECTION_WIDTH;
-localparam ROW_WIDTH = NUM_SECTIONS * SECTION_WIDTH;
+localparam ROW_WIDTH = NUM_SECTIONS * SECTION_WIDTH; // always = 1024 bits
 
 /*******************************************************************************
 * Memory Architecture
