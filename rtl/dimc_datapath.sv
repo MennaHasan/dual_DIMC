@@ -4,7 +4,7 @@
 module dimc_datapath
   import dimc_package::*;
 #(
-  parameter int unsigned SECTION_WIDTH  = 256, // width of one DIMC memory/compute section (must stay 256: spatz_DIMC hardcodes FA/RA/WA bit widths assuming 1024/SECTION_WIDTH == 4 sections per row)
+  parameter int unsigned SECTION_WIDTH  = 256, // width of one DIMC memory/compute section (must stay 256: spatz_dimc hardcodes FA/RA/WA bit widths assuming 1024/SECTION_WIDTH == 4 sections per row)
   parameter int unsigned INP_FIFO_DEPTH = 8,
   parameter int unsigned WGT_FIFO_DEPTH = 128,
   parameter int unsigned OUT_FIFO_DEPTH = 64

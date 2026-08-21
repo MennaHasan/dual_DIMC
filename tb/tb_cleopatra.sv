@@ -35,7 +35,7 @@ module tb_cleopatra;
   localparam int NUM_STIM_SETS = 8;  // Must match stimuli/cleo_tests_1_2_stim.py.
 
   parameter SECTION_WIDTH  = 256;
-  parameter KERNEL_WEIGHTS_FILE       = "stimuli/dimc_tests/kernel_weights.txt";
+  parameter KERNEL_WEIGHTS_FILE       = "stimuli/spatz_dimc_stims/kernel_weights.txt";
   parameter FEATURE_VECTOR_8X_FILE    = "stimuli/cleo_test1/feature_vector_8times.txt";
   parameter GOLDEN_OUTPUT_CLEOPATRA_FILE = "stimuli/cleo_test1/golden_output_cleopatra.txt";
   parameter GOLDEN_OUTPUT_CLEOPATRA_TEST2_FILE = "stimuli/cleo_test2/golden_output_cleopatra_test2.txt";

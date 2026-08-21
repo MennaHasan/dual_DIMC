@@ -6,7 +6,7 @@
  * ============================================================
  * Testbench for spatz_DIMC_dual (spatz_DIMC_dual.sv).
  *
- * spatz_DIMC_dual wraps two independently controlled spatz_DIMC macros and
+ * spatz_DIMC_dual wraps two independently controlled spatz_dimc macros and
  * three FIFOs (weight, input, output). sel selects only the observed output.
  *
  * PIPELINE LATENCY
@@ -78,12 +78,12 @@ module tb_DIMC_dual;
   // -------------------------------------------------------------------------
   // SECTION_WIDTH: each DIMC memory section is 256 bits = 32 bytes.
   parameter SECTION_WIDTH  = 256;
-  parameter KERNEL_WEIGHTS_FILE         = "stimuli/dimc_tests/kernel_weights.txt";
-  parameter FEATURE_VECTOR_FILE         = "stimuli/dimc_tests/feature_vector.txt";
-  parameter GOLDEN_MATVEC_FILE          = "stimuli/dimc_tests/golden_clipped_8bit.txt";
-  parameter GOLDEN_PSOUT_FILE           = "stimuli/dimc_tests/golden_psum_32bit.txt";
-  parameter GOLDEN_COMPUTE_MASK_FILE    = "stimuli/dimc_tests/golden_with_masking_8bit.txt";
-  parameter GOLDEN_PSOUT_MASK_FILE      = "stimuli/dimc_tests/golden_psum_with_masking_32bit.txt";
+  parameter KERNEL_WEIGHTS_FILE         = "stimuli/spatz_dimc_stims/kernel_weights.txt";
+  parameter FEATURE_VECTOR_FILE         = "stimuli/spatz_dimc_stims/feature_vector.txt";
+  parameter GOLDEN_MATVEC_FILE          = "stimuli/spatz_dimc_stims/golden_clipped_8bit.txt";
+  parameter GOLDEN_PSOUT_FILE           = "stimuli/spatz_dimc_stims/golden_psum_32bit.txt";
+  parameter GOLDEN_COMPUTE_MASK_FILE    = "stimuli/spatz_dimc_stims/golden_with_masking_8bit.txt";
+  parameter GOLDEN_PSOUT_MASK_FILE      = "stimuli/spatz_dimc_stims/golden_psum_with_masking_32bit.txt";
 
   // NB_COMPUTE_MASK_VALS: number of distinct compute_mask values in the sweep test (Test 11-12).
   parameter NB_COMPUTE_MASK_VALS = 6;

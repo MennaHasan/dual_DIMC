@@ -2,7 +2,7 @@
 
 `timescale 1ns/1ps
 
-module spatz_DIMC  #(
+module spatz_dimc  #(
     // Parameter for Section Width
     parameter SECTION_WIDTH = 256   // can be 256, 512, or 1024
 )(
@@ -195,12 +195,11 @@ end
 * Sequential Logic Blocks
 *******************************************************************************/
 
-// Memory Mode Operations
+// Read port and feature-buffer operations (RCK domain)
 always_ff @(posedge RCK or negedge RESETn) begin
     if (!RESETn) begin
         feature_buf <= '{default:'0};
         Q <= '0;
-        kernel_mem <= '{default:'{default:'0}};
     end
     else begin
         // Feature buffer loading
@@ -208,8 +207,15 @@ always_ff @(posedge RCK or negedge RESETn) begin
 
         // Memory read
         if (mem_read_en) Q <= kernel_mem[RA[6:2]][RA[1:0]];
+    end
+end
 
-        // Memory write
+// Independent kernel-memory write port (WCK domain)
+always_ff @(posedge WCK or negedge RESETn) begin
+    if (!RESETn) begin
+        kernel_mem <= '{default:'{default:'0}};
+    end
+    else begin
         if (mem_write_en) begin
             for (int i = 0; i < 256; i++) begin
                 if (M[i]) kernel_mem[WA[6:2]][WA[1:0]][i] <= D[i];

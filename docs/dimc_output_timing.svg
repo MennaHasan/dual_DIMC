@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="620" viewBox="0 0 1000 620">
+  <rect width="1000" height="620" fill="white"/>
+  <defs><pattern id="hatch" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="8" stroke="#111" stroke-width="2"/></pattern></defs>
+  <style>
+    .title{font-family:'Times New Roman',serif;font-size:28px;font-weight:bold;fill:#111}
+    .label{font-family:Arial,sans-serif;font-size:24px;fill:#164dc4}
+    .data{font-family:Arial,sans-serif;font-size:22px;fill:#111}
+    .wave{fill:none;stroke:#111;stroke-width:2.5;stroke-linejoin:miter;stroke-linecap:square}
+    .grid{stroke:#888;stroke-width:1.4;stroke-dasharray:4 9}.invalid{fill:url(#hatch);stroke:#111;stroke-width:2.5}.valid{fill:white;stroke:#111;stroke-width:2.5}
+    .invalid-fill{fill:url(#hatch);stroke:none}.valid-fill{fill:white;stroke:none}
+  </style>
+  <text x="500" y="40" text-anchor="middle" class="title">Spatz DIMC Request and Output Timing</text>
+  <g transform="translate(60 45)">
+  <!-- Single request -->
+  <text x="115" y="75" text-anchor="end" class="label">clk</text><text x="115" y="132" text-anchor="end" class="label">RCSN</text><text x="115" y="189" text-anchor="end" class="label">READYN</text><text x="115" y="246" text-anchor="end" class="label">PSOUT</text>
+  <g class="grid"><path d="M140 36V275M220 36V275M300 36V275M380 36V275M460 36V275M540 36V275M620 36V275M700 36V275M780 36V275M860 36V275"/></g>
+  <path class="wave" d="M140 88V48H180V88H220V48H260V88H300V48H340V88H380V48H420V88H460V48H500V88H540V48H580V88H620"/>
+  <path class="wave" d="M650 88H660V48H700V88H740V48H780V88H820V48H860V88H900M625 91L637 43M637 91L649 43"/>
+  <path class="wave" d="M140 107H220L235 147H300L315 107H900M140 164H540L555 204H620L635 164H900"/>
+  <rect x="140" y="221" width="400" height="40" class="invalid-fill"/><rect x="555" y="221" width="65" height="40" class="valid-fill"/><rect x="635" y="221" width="265" height="40" class="invalid-fill"/>
+  <path class="wave" d="M140 221H540M140 261H540M555 221H620M555 261H620M635 221H900M635 261H900M140 221V261M900 221V261M540 221L555 261M540 261L555 221M620 221L635 261M620 261L635 221"/><text x="587" y="249" text-anchor="middle" class="data">D0</text>
+  <!-- Consecutive requests -->
+  <text x="115" y="356" text-anchor="end" class="label">clk</text><text x="115" y="413" text-anchor="end" class="label">RCSN</text><text x="115" y="470" text-anchor="end" class="label">READYN</text><text x="115" y="527" text-anchor="end" class="label">PSOUT</text>
+  <g class="grid"><path d="M140 317V556M220 317V556M300 317V556M380 317V556M460 317V556M540 317V556M620 317V556M700 317V556M780 317V556M860 317V556"/></g>
+  <path class="wave" d="M140 369V329H180V369H220V329H260V369H300V329H340V369H380V329H420V369H460V329H500V369H540V329H580V369H620"/>
+  <path class="wave" d="M650 369H660V329H700V369H740V329H780V369H820V329H860V369H900M625 372L637 324M637 372L649 324"/>
+  <path class="wave" d="M140 388H220L235 428H540L555 388H900M140 445H540L555 485H860L875 445H900"/>
+  <rect x="140" y="502" width="400" height="40" class="invalid-fill"/><rect x="555" y="502" width="305" height="40" class="valid-fill"/><rect x="875" y="502" width="25" height="40" class="invalid-fill"/>
+  <path class="wave" d="M140 502H540M140 542H540M555 502H860M555 542H860M875 502H900M875 542H900M140 502V542M900 502V542M540 502L555 542M540 542L555 502M860 502L875 542M860 542L875 502"/><text x="707" y="530" text-anchor="middle" class="data">D0</text>
+  </g>
+</svg>

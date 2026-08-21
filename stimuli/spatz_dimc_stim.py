@@ -15,10 +15,17 @@ USAGE
 ============================================================
 CHANGING CONFIGURATION
 ============================================================
-  1. Edit BIAS, SECTION_WIDTH, or COMPUTE_MASK_VALS below.
+  1. Edit BIAS, SECTION_WIDTH, and COMPUTE_MASK_VALS below.
   2. Update the matching localparams in tb_spatz_dimc.sv.
   3. Re-run this script to regenerate the golden files.
-  No simulator recompile is needed — files are loaded at runtime.
+
+============================================================
+RUNNING THE FILE
+============================================================
+1. make stim
+OR
+2. python3 stimuli/spatz_dimc_stim.py --outdir stimuli
+
 """
 
 import argparse
@@ -29,7 +36,7 @@ import numpy as np
 BIAS = -2_080_000
 SECTION_WIDTH = 256
 
-# Number of kernel rows.  The DUT has 32 SRAM rows.
+# Number of kernel rows.
 NB_KERNEL_ROWS    = 32
 
 # Number of sections per 1024-bit kernel row.
@@ -51,6 +58,7 @@ NB_COMPUTE_MASK_VALS = len(COMPUTE_MASK_VALS)
 # REFERENCE MODEL
 # =========================================================================
 
+# Computes the masked multiplication sum for one kernel row and feature vector.
 def compute_mac(kernel_row: np.ndarray, feature: np.ndarray, compute_mask: int) -> int:
     valid_bits = max(0, 1024 - int(compute_mask))
 
@@ -68,6 +76,7 @@ def compute_mac(kernel_row: np.ndarray, feature: np.ndarray, compute_mask: int) 
     return acc
 
 
+# Adds the bias, applies ReLU, and clips the result to 8 bits.
 def clip_with_bias(mac_val: int, bias: int) -> int:
     psum = (mac_val + bias) & 0xFFFFFFFF
     if psum & 0x80000000:
@@ -81,11 +90,13 @@ def clip_with_bias(mac_val: int, bias: int) -> int:
 # FILE HELPERS
 # =========================================================================
 
+# Converts one byte section into $readmemh hexadecimal ordering.
 def section_to_hex(section_bytes: np.ndarray) -> str:
     """Convert one section to a $readmemh-compatible hexadecimal string."""
     return "".join(f"{b:02x}" for b in reversed(section_bytes))
 
 
+# Writes integer values as fixed-width hexadecimal lines.
 def write_golden(path: str, values, width: int) -> None:
     mask = (1 << width) - 1
     chars = width // 4
@@ -98,6 +109,7 @@ def write_golden(path: str, values, width: int) -> None:
 # MAIN
 # =========================================================================
 
+# Parses options and generates all DIMC stimulus and golden files.
 def main():
     parser = argparse.ArgumentParser(
         description="Generate DIMC_18_fixed testbench stimulus files"
@@ -110,8 +122,8 @@ def main():
 
     np.random.seed(args.seed)
     os.makedirs(args.outdir, exist_ok=True)
-    dimc_tests_dir = os.path.join(args.outdir, "dimc_tests")
-    os.makedirs(dimc_tests_dir, exist_ok=True)
+    spatz_dimc_stims_dir = os.path.join(args.outdir, "spatz_dimc_stims")
+    os.makedirs(spatz_dimc_stims_dir, exist_ok=True)
 
 
     # GENERATE RANDOM STIMULUS DATA
@@ -123,7 +135,7 @@ def main():
     # =========================================================================
     # FILE 1: kernel_weights.txt
     # =========================================================================
-    with open(os.path.join(dimc_tests_dir, "kernel_weights.txt"), "w") as f:
+    with open(os.path.join(spatz_dimc_stims_dir, "kernel_weights.txt"), "w") as f:
         for r in range(NB_KERNEL_ROWS):
             for s in range(NUM_SECTIONS):
                 # Extract the 32-byte slice for this section of this row
@@ -133,7 +145,7 @@ def main():
     # =========================================================================
     # FILE 2: feature_vector.txt for 1 full feature vector
     # =========================================================================
-    with open(os.path.join(dimc_tests_dir, "feature_vector.txt"), "w") as f:
+    with open(os.path.join(spatz_dimc_stims_dir, "feature_vector.txt"), "w") as f:
         for s in range(NUM_SECTIONS):
             section = feature[s * BYTES_PER_SECTION : (s + 1) * BYTES_PER_SECTION]
             f.write(section_to_hex(section) + "\n")
@@ -149,12 +161,12 @@ def main():
     # FILE 3: golden_clipped_8bit.txt
     # =========================================================================
     golden_matvec = [clip_with_bias(mac, BIAS) for mac in mac_full]
-    write_golden(os.path.join(dimc_tests_dir, "golden_clipped_8bit.txt"), golden_matvec, width=8)
+    write_golden(os.path.join(spatz_dimc_stims_dir, "golden_clipped_8bit.txt"), golden_matvec, width=8)
 
     # =========================================================================
     # FILE 4: golden_psum_32bit.txt  (Test 3 expected 32-bit partial sums)
     # =========================================================================
-    write_golden(os.path.join(dimc_tests_dir, "golden_psum_32bit.txt"), psum_full, width=32)
+    write_golden(os.path.join(spatz_dimc_stims_dir, "golden_psum_32bit.txt"), psum_full, width=32)
 
     # =========================================================================
     # PRE-COMPUTE MAC VALUES FOR compute mask SWEEP (row 0 only, 6 compute mask values)
@@ -168,13 +180,13 @@ def main():
     # FILE 5: golden_with_masking_8bit.txt  (Test 4 expected 8-bit outputs)
     # =========================================================================
     golden_compute_mask = [clip_with_bias(mac, BIAS) for mac in mac_compute_mask]
-    write_golden(os.path.join(dimc_tests_dir, "golden_with_masking_8bit.txt"), golden_compute_mask, width=8)
+    write_golden(os.path.join(spatz_dimc_stims_dir, "golden_with_masking_8bit.txt"), golden_compute_mask, width=8)
 
     # =========================================================================
     # FILE 6: golden_psum_with_masking_32bit.txt  (Test 4 expected 32-bit partial sums)
     # =========================================================================
     write_golden(
-        os.path.join(dimc_tests_dir, "golden_psum_with_masking_32bit.txt"),
+        os.path.join(spatz_dimc_stims_dir, "golden_psum_with_masking_32bit.txt"),
         psum_compute_mask,
         width=32,
     )

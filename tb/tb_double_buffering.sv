@@ -659,9 +659,11 @@ module tb_double_buffering;
 
 
   initial begin
-    int errors = 0;
+    int errors;
     int accumulator_file;
     int python_status;
+
+    errors = 0;
 
     $readmemh(KERNEL_STIM_FILE, kernel_stim_flat);
     $readmemh(FEATURE_STIM_FILE, feature_stim_flat);

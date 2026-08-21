@@ -16,7 +16,7 @@ e0447821bf690fcabbc9fcf0794c19d30b56922e	not-for-merge	branch 'fix_missing_legac
 2cf66b7ed589954bcf90fd9c883053264d7aefb6	not-for-merge	branch 'fpga' of https://github.com/pulp-platform/tech_cells_generic
 a2705ad2025cf4daeb63c49810fb6de9d3b1f3f8	not-for-merge	branch 'gwaihir' of https://github.com/pulp-platform/tech_cells_generic
 313ffafcfb65d7ca80a1c046bf5730848809ef81	not-for-merge	branch 'gwt' of https://github.com/pulp-platform/tech_cells_generic
-81dc29f14024343e8c14a674718121517d729549	not-for-merge	branch 'master' of https://github.com/pulp-platform/tech_cells_generic
+55cb54513e2d426be5992d311cb9d5dbcad10c78	not-for-merge	branch 'master' of https://github.com/pulp-platform/tech_cells_generic
 5912352c9a9461de64e93355436f8efe3b6bc310	not-for-merge	branch 'mattia_s' of https://github.com/pulp-platform/tech_cells_generic
 43816f4895f25eba74b5fbae3226553f38148760	not-for-merge	branch 'nw/update-readme' of https://github.com/pulp-platform/tech_cells_generic
 951a71cd31f8b3cdac104e5328fa163a8ecabe09	not-for-merge	branch 'phsauter/tc_sram-random' of https://github.com/pulp-platform/tech_cells_generic
@@ -24,8 +24,10 @@ a2705ad2025cf4daeb63c49810fb6de9d3b1f3f8	not-for-merge	branch 'gwaihir' of https
 9b0af47613f7e8991da0b2c10defc0c5957090bf	not-for-merge	branch 'release/v0.2.14' of https://github.com/pulp-platform/tech_cells_generic
 e03526018b5e3ce41591514e2e5b61ca2b94d14f	not-for-merge	branch 'siracusa' of https://github.com/pulp-platform/tech_cells_generic
 425a2a04c7e2e6c4c3da6a6f1f6e1efe07cb1bc5	not-for-merge	branch 'sm/cp' of https://github.com/pulp-platform/tech_cells_generic
+746466e031e465094d6de3254750883af07cc238	not-for-merge	branch 'sm/vlt' of https://github.com/pulp-platform/tech_cells_generic
 f931329a80140b3c04ed8671ca14008d4f18e76a	not-for-merge	branch 'tc_sync' of https://github.com/pulp-platform/tech_cells_generic
 82de1055df313e25596b116e437b8eb657f368fb	not-for-merge	branch 'verilator' of https://github.com/pulp-platform/tech_cells_generic
+36ca2d75f8b666821c8bb1a8e1f8b0b5358a1817	not-for-merge	branch 'xsim-fix' of https://github.com/pulp-platform/tech_cells_generic
 bccdf7bf4d813b12f66fcc18b45300759c7e0fea	not-for-merge	tag 'gwt_v0.1.11' of https://github.com/pulp-platform/tech_cells_generic
 5872932739d21f486c5206c8fcb436ef4c563470	not-for-merge	tag 'pulpissimo-v1.0' of https://github.com/pulp-platform/tech_cells_generic
 04b7b2735d42e4715c1bc9227027a3d8fb770c08	not-for-merge	tag 'v.0.1.16' of https://github.com/pulp-platform/tech_cells_generic

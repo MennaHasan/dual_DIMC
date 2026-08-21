@@ -3,7 +3,7 @@
 // ============================================================
 // PURPOSE
 // ============================================================
-// Structural RTL wrapper around TWO spatz_DIMC macros.
+// Structural RTL wrapper around TWO spatz_dimc macros.
 // Contents: 
 //      2 DIMC Macros (u_mac0, u_mac1)      
 //      wgt_fifo (Weight FIFO, depth=128):
@@ -29,10 +29,10 @@
 `timescale 1ns/1ps
 
 // =============================================================================
-// MODULE: spatz_DIMC_dual — wrapper around two spatz_DIMC instances
+// MODULE: spatz_DIMC_dual — wrapper around two spatz_dimc instances
 // =============================================================================
 module spatz_DIMC_dual #(
-    // Width of each 256-bit SRAM section (must match spatz_DIMC parameter).
+    // Width of each 256-bit SRAM section (must match spatz_dimc parameter).
     parameter int SECTION_WIDTH  = 256,
     // FIFO depths in number of SECTION_WIDTH-bit entries:
     parameter int INP_FIFO_DEPTH = 8,    // input feature FIFO:  2 complete feature vectors (2 × 4 = 8)
@@ -180,7 +180,7 @@ module spatz_DIMC_dual #(
     // DIMC macro 0 instantiation
     // =========================================================================
     // DIMC 0 is driven directly by the _m0 control-input set.
-    spatz_DIMC #(.SECTION_WIDTH(SECTION_WIDTH)) u_mac0 (
+    spatz_dimc #(.SECTION_WIDTH(SECTION_WIDTH)) u_mac0 (
         .RCK     (clk),
         .RESETn  (rst_n),
         .COMPE   (COMPE_m0),
@@ -213,7 +213,7 @@ module spatz_DIMC_dual #(
     // DIMC macro 1 instantiation
     // =========================================================================
     // DIMC 1 is driven directly by the _m1 control-input set.
-    spatz_DIMC #(.SECTION_WIDTH(SECTION_WIDTH)) u_mac1 (
+    spatz_dimc #(.SECTION_WIDTH(SECTION_WIDTH)) u_mac1 (
         .RCK     (clk),
         .RESETn  (rst_n),
         .COMPE   (COMPE_m1),
