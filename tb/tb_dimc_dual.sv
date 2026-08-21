@@ -1,5 +1,5 @@
 /*
- * tb_DIMC_dual.sv
+ * tb_dimc_dual.sv
  *
  * ============================================================
  * PURPOSE
@@ -70,7 +70,7 @@
 
 `timescale 1ns/1ps
 
-module tb_DIMC_dual;
+module tb_dimc_dual;
   import dimc_package::*;
 
   // -------------------------------------------------------------------------
@@ -1040,8 +1040,8 @@ module tb_DIMC_dual;
   // WAVEFORM DUMP
   // =========================================================================
   initial begin
-    $dumpfile("sim/tb_DIMC_dual.vcd");
-    $dumpvars(0, tb_DIMC_dual);
+    $dumpfile("sim/tb_dimc_dual.vcd");
+    $dumpvars(0, tb_dimc_dual);
   end
 
   // =========================================================================

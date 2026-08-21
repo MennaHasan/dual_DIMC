@@ -13,10 +13,10 @@
  * drives dimc_datapath's input_i/kernel_i HWPE-Stream sink ports as a
  * plain valid/ready producer and drains output_o as a plain valid/ready
  * consumer, then checks the results against the SAME golden vectors used
- * by tb_DIMC_dual.sv (stimuli/spatz_dimc_stims/golden_psum_32bit.txt), reusing the
+ * by tb_dimc_dual.sv (stimuli/spatz_dimc_stims/golden_psum_32bit.txt), reusing the
  * same kernel/feature stimuli. This proves the bridge + sequencer inside
  * dimc_datapath reproduce spatz_DIMC_dual's known-good behavior (verified
- * directly, in tb_DIMC_dual.sv) when driven purely through HWPE-Stream.
+ * directly, in tb_dimc_dual.sv) when driven purely through HWPE-Stream.
  */
 
 `timescale 1ns/1ps
@@ -25,7 +25,7 @@ module tb_dimc_datapath;
   import dimc_package::*;
 
   // -------------------------------------------------------------------------
-  // Parameters (mirrors tb_DIMC_dual.sv)
+  // Parameters (mirrors tb_dimc_dual.sv)
   // -------------------------------------------------------------------------
   parameter int unsigned SECTION_WIDTH  = 256;
   localparam int unsigned NUM_SECTIONS       = 1024 / SECTION_WIDTH; // = 4

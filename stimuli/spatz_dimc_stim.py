@@ -55,6 +55,15 @@ NB_COMPUTE_MASK_VALS = len(COMPUTE_MASK_VALS)
 # Signed 8-bit configurations: KS/FU, KU/FS, and KS/FS.
 SIGNED_8B_MODES = [0b01, 0b10, 0b11]
 
+# Signed different precision configurations: 1-bit, 2-bit, 4-bit (00=1b, 01=2b, 10=4b, 11=8b)
+PRECISION_MODES = [0b00, 0b01, 0b10]
+
+PRECISION_TO_BITS = {
+    0b00: 1,
+    0b01: 2,
+    0b10: 4,
+    0b11: 8,
+}
 
 
 # =========================================================================
@@ -89,6 +98,24 @@ def compute_mac(
 
     return acc
 
+def compute_mac_with_precision(kernel_row, feature, precision_mode):
+    """
+    Compute the dot product (MAC accumulation).
+    Returns the 32-bit MAC result.
+    """
+
+    bits = PRECISION_TO_BITS[precision_mode]
+
+    kernel_values = unpack_unsigned(kernel_row, bits)
+    feature_values = unpack_unsigned(feature, bits)
+
+    mac = np.dot(
+        kernel_values.astype(np.int64),
+        feature_values.astype(np.int64)
+    )
+
+    # Keep exact 32-bit representation
+    return int(mac) & 0xFFFFFFFF
 
 # Adds the bias, applies ReLU, and clips the result to 8 bits.
 def clip_with_bias(mac_val: int, bias: int) -> int:
@@ -99,6 +126,21 @@ def clip_with_bias(mac_val: int, bias: int) -> int:
         return 0xFF
     return psum
 
+def unpack_unsigned(data, bits):
+    data = np.asarray(data, dtype=np.uint8)
+
+    if bits == 8:
+        return data.astype(np.int64)
+
+    mask = (1 << bits) - 1
+
+    # LSB-first, matching RTL:
+    # [i*bits +: bits]
+    shifts = np.arange(0, 8, bits, dtype=np.int64)
+
+    unpacked = (data[..., None] >> shifts) & mask
+
+    return unpacked.reshape(-1).astype(np.int64)
 
 # =========================================================================
 # FILE HELPERS
@@ -227,6 +269,31 @@ def main():
             signed_psum,
             width=32,
         )
+
+
+    # =========================================================================
+    # unsigned different precision GOLDEN FILES: mode = 00, 01, and 01
+    # =========================================================================
+    for mode in PRECISION_MODES:
+        signed_mac = [
+            compute_mac_with_precision(kernel[r], feature, mode)
+            for r in range(NB_KERNEL_ROWS)
+        ]
+        signed_psum = [(mac + BIAS) & 0xFFFFFFFF for mac in signed_mac]
+        signed_clipped = [clip_with_bias(mac, BIAS) for mac in signed_mac]
+        mode_name = f"{mode:02b}"
+
+        write_golden(
+            os.path.join(spatz_dimc_stims_dir, f"golden_mode_{mode_name}_clipped_8bit.txt"),
+            signed_clipped,
+            width=8,
+        )
+        write_golden(
+            os.path.join(spatz_dimc_stims_dir, f"golden_mode_{mode_name}_psum_32bit.txt"),
+            signed_psum,
+            width=32,
+        )
+
 
     # =========================================================================
     # SUMMARY REPORT

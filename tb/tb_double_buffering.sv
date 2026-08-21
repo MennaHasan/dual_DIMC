@@ -79,7 +79,7 @@ module tb_double_buffering;
   logic [31:0] golden_matmul [0:DB_OUTPUT_ELEMENTS-1];
   logic [31:0] final_matmul [0:DB_OUTPUT_ELEMENTS-1];
 
-  // Timing: same as tb_DIMC_dual.sv (100 MHz, 2 ns apply, 8 ns test)
+  // Timing: same as tb_dimc_dual.sv (100 MHz, 2 ns apply, 8 ns test)
   localparam time ClkPeriod = 10ns;
   localparam time ApplTime  = 2ns;
   localparam time TestTime  =  8ns;

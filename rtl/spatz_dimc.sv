@@ -136,14 +136,16 @@ always_comb begin
     case (pipeline_mode[1])
         // 1-bit Mode: XNOR + Popcount
         2'b00: begin
-            xnor_result = ~(pipeline_kernel[1] ^ pipeline_feature[1]);
-            popcount = $countones(xnor_result);
-            comp_result = popcount;
+            for (int i = 0; i < ROW_WIDTH; i++) begin
+                comp_result +=
+                    pipeline_kernel[1][i] *
+                    pipeline_feature[1][i];
+            end
         end
 
         // 2-bit Mode: Vector multiplication
         2'b01: begin
-            for (int i = 0; i < 512; i++) begin
+            for (int i = 0; i < ROW_WIDTH/2; i++) begin
                 k_val2b = pipeline_kernel[1][i*2 +: 2];
                 f_val2b = pipeline_feature[1][i*2 +: 2];
                 comp_result += k_val2b * f_val2b;
@@ -152,7 +154,7 @@ always_comb begin
 
         // 4-bit Mode: Vector multiplication
         2'b10: begin
-            for (int i = 0; i < 256; i++) begin
+            for (int i = 0; i < ROW_WIDTH/4; i++) begin
                 k_val4b = pipeline_kernel[1][i*4 +: 4];
                 f_val4b = pipeline_feature[1][i*4 +: 4];
                 comp_result += k_val4b * f_val4b;

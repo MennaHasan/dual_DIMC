@@ -29,7 +29,7 @@ make sim-cleopatra GUI=1
 5. Adding signals innside Questasim 
 A. for sim-dual
 restart -f
-env tb_DIMC_dual
+env tb_dimc_dual
 add wave clk COMPE RCSN READYN PSOUT SOUT RES_OUT out_data out_empty out_pop
 
 B. for sim-cleopatra

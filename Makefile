@@ -69,12 +69,12 @@ ifeq ($(GUI),1)
 VSIM_FLAGS = -voptargs=+acc
 VSIM_DO    = "run -all"
 else
-VSIM_FLAGS = -c -voptargs=+acc
+VSIM_FLAGS = -c 
 VSIM_DO    = "run -all; quit"
 endif
 
 sim-dual: stim hw-compile
-	vsim $(VSIM_FLAGS) -l $(SIM_DIR)/transcript -lib $(WORK_DIR) tb_DIMC_dual -do $(VSIM_DO)
+	vsim $(VSIM_FLAGS) -l $(SIM_DIR)/transcript -lib $(WORK_DIR) tb_dimc_dual -do $(VSIM_DO)
 
 sim-double-buffering: stim hw-compile
 	rm -f $(DOUBLE_BUFFERING_STIM_DIR)/double_buffering_accumulator_output.txt
@@ -82,7 +82,7 @@ sim-double-buffering: stim hw-compile
 	vsim $(VSIM_FLAGS) -l $(SIM_DIR)/transcript -lib $(WORK_DIR) tb_double_buffering -do $(VSIM_DO)
 
 sim-single: stim hw-compile
-	vsim $(VSIM_FLAGS) -l $(SIM_DIR)/transcript -lib $(WORK_DIR) tb_DIMC -do $(VSIM_DO)
+	vsim $(VSIM_FLAGS) -l $(SIM_DIR)/transcript -lib $(WORK_DIR) tb_dimc -do $(VSIM_DO)
 
 sim-datapath: stim hw-compile
 	vsim $(VSIM_FLAGS) -l $(SIM_DIR)/transcript -lib $(WORK_DIR) tb_dimc_datapath -do $(VSIM_DO)

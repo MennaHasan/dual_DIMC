@@ -12,7 +12,7 @@ dependencies:
 sources:
   - files:
       - rtl/spatz_dimc.sv
-      - rtl/spatz_DIMC_dual.sv
+      - rtl/spatz_dimc_dual.sv
       - rtl/dimc_package.sv
       - rtl/dimc_datapath.sv
       - rtl/dimc_streamer.sv
@@ -24,7 +24,7 @@ sources:
 
   - target: tb
     files:
-      - tb/tb_DIMC_dual.sv
+      - tb/tb_dimc_dual.sv
       - tb/tb_double_buffering.sv
       - tb/tb_spatz_dimc.sv
       - tb/tb_dimc_datapath.sv
