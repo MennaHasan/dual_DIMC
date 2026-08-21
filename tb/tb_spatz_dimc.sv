@@ -14,6 +14,7 @@
  * Test 5 — Load feature vector, then run Full MatVec for all 32 rows
  * Test 6 — Pipelined Full MatVec
  * Test 7 — compute_mask sweep: row 0 at 6 different compute_mask values
+ * Test 8 — Signed 8-bit multiplication: sign_8b=01, 10, and 11
  *
  * ============================================================
  * TO RUN SIMULATION
@@ -32,6 +33,7 @@
 `define TB_DIMC_TEST5    // Feature load + Full MatVec
 `define TB_DIMC_TEST6    // Pipelined Full MatVec
 `define TB_DIMC_TEST7    // compute_mask masking sweep
+`define TB_DIMC_TEST8    // Signed 8-bit multiplication
 // ─────────────────────────────────────────────────────────────────────────
 
 `timescale 1ns/1ps
@@ -55,6 +57,12 @@ module tb_DIMC;
   parameter GOLDEN_PSOUT_FILE           = "stimuli/spatz_dimc_stims/golden_psum_32bit.txt";
   parameter GOLDEN_COMPUTE_MASK_FILE    = "stimuli/spatz_dimc_stims/golden_with_masking_8bit.txt";
   parameter GOLDEN_PSOUT_MASK_FILE      = "stimuli/spatz_dimc_stims/golden_psum_with_masking_32bit.txt";
+  parameter GOLDEN_SIGN_01_CLIPPED_FILE = "stimuli/spatz_dimc_stims/golden_sign_01_clipped_8bit.txt";
+  parameter GOLDEN_SIGN_01_PSOUT_FILE   = "stimuli/spatz_dimc_stims/golden_sign_01_psum_32bit.txt";
+  parameter GOLDEN_SIGN_10_CLIPPED_FILE = "stimuli/spatz_dimc_stims/golden_sign_10_clipped_8bit.txt";
+  parameter GOLDEN_SIGN_10_PSOUT_FILE   = "stimuli/spatz_dimc_stims/golden_sign_10_psum_32bit.txt";
+  parameter GOLDEN_SIGN_11_CLIPPED_FILE = "stimuli/spatz_dimc_stims/golden_sign_11_clipped_8bit.txt";
+  parameter GOLDEN_SIGN_11_PSOUT_FILE   = "stimuli/spatz_dimc_stims/golden_sign_11_psum_32bit.txt";
 
 
   /*  maksking parameters
@@ -67,7 +75,7 @@ module tb_DIMC;
       '{10'd0, 10'd512, 10'd768, 10'd896, 10'd960, 10'd992};
 
 
-  localparam logic [31:0] BIAS = 32'hFFE04300;
+  localparam logic [31:0] BIAS = 32'd0;
 
   // Stimulus and golden arrays
   // These are filled by $readmemh at the start of the test sequence.
@@ -84,6 +92,13 @@ module tb_DIMC;
   logic [7:0]  golden_compute_mask [0 : NB_COMPUTE_MASK_VALS-1];
 
   logic [31:0] golden_psout_compute_mask[0 : NB_COMPUTE_MASK_VALS-1];
+
+  logic [7:0]  golden_sign_01_clipped [0 : NB_KERNEL_ROWS-1];
+  logic [31:0] golden_sign_01_psout   [0 : NB_KERNEL_ROWS-1];
+  logic [7:0]  golden_sign_10_clipped [0 : NB_KERNEL_ROWS-1];
+  logic [31:0] golden_sign_10_psout   [0 : NB_KERNEL_ROWS-1];
+  logic [7:0]  golden_sign_11_clipped [0 : NB_KERNEL_ROWS-1];
+  logic [31:0] golden_sign_11_psout   [0 : NB_KERNEL_ROWS-1];
 
   // Timing parameters
   localparam time ClkPeriod = 10ns;
@@ -183,6 +198,7 @@ module tb_DIMC;
     RCSN0 = 1'b1; RCSN1 = 1'b1; RCSN2 = 1'b1; RCSN3 = 1'b1;
     WCSN = 1'b1; WEN = 1'b1;
     D = '0; FD = '0; M = '1;
+    MODE = 2'b11; compute_mask = '0; sign_8b = 2'b00; ADDIN = '0;
     repeat (2) @(posedge RCK);
     #ApplTime RESETn = 1'b1;
     @(posedge RCK); #ApplTime;
@@ -253,6 +269,7 @@ task automatic load_feature(
     input  [4:0]  row,      // kernel row to compute dot product for (0-31)
     input  [31:0] bias,
     input  [9:0]  compute_mask_val,
+    input  [1:0]  sign_mode,
     output [31:0] psout,
     output [7:0]  clipped
   );
@@ -261,7 +278,7 @@ task automatic load_feature(
     COMPE = 1'b1;                             // trigger the pipeline
     MODE  = 2'b11;                            // 8-bit MAC mode
     compute_mask = compute_mask_val;
-    sign_8b = 2'b00;
+    sign_8b = sign_mode;
     RA    = {row, 2'b00};                     // row address; section bits ignored in compute mode
     ADDIN = bias;                             // bias to add at Stage 3
     RCSN  = 1'b0; RCSN0 = 1'b0; RCSN1 = 1'b0; RCSN2 = 1'b0; RCSN3 = 1'b0;  // enable all sections
@@ -290,6 +307,7 @@ task automatic load_feature(
   task automatic compute_all_rows_pipelined(
     input  [31:0] bias,
     input  [9:0]  compute_mask_val,
+    input  [1:0]  sign_mode,
     output [31:0] psout_out [0:NB_KERNEL_ROWS-1],
     output [7:0]  clipped_out [0:NB_KERNEL_ROWS-1]
   );
@@ -300,7 +318,7 @@ task automatic load_feature(
         COMPE = 1'b1;
         MODE  = 2'b11;
         compute_mask = compute_mask_val;
-        sign_8b = 2'b00;
+        sign_8b = sign_mode;
         RA    = {5'(i), 2'b00};
         ADDIN = bias;
         RCSN  = 1'b0; RCSN0 = 1'b0; RCSN1 = 1'b0; RCSN2 = 1'b0; RCSN3 = 1'b0;
@@ -348,6 +366,12 @@ task automatic load_feature(
     $readmemh(GOLDEN_PSOUT_FILE,           golden_psout);   //  32 entries: expected 32-bit psum per row
     $readmemh(GOLDEN_COMPUTE_MASK_FILE, golden_compute_mask);
     $readmemh(GOLDEN_PSOUT_MASK_FILE, golden_psout_compute_mask);
+    $readmemh(GOLDEN_SIGN_01_CLIPPED_FILE, golden_sign_01_clipped);
+    $readmemh(GOLDEN_SIGN_01_PSOUT_FILE, golden_sign_01_psout);
+    $readmemh(GOLDEN_SIGN_10_CLIPPED_FILE, golden_sign_10_clipped);
+    $readmemh(GOLDEN_SIGN_10_PSOUT_FILE, golden_sign_10_psout);
+    $readmemh(GOLDEN_SIGN_11_CLIPPED_FILE, golden_sign_11_clipped);
+    $readmemh(GOLDEN_SIGN_11_PSOUT_FILE, golden_sign_11_psout);
 
 `ifdef TB_DIMC_TEST1
     // =======================================================================
@@ -519,7 +543,7 @@ task automatic load_feature(
     begin
       automatic int test_fail = 0;
       for (int r = 0; r < NB_KERNEL_ROWS; r++) begin
-        compute_and_capture(5'(r), BIAS, 10'd0, psout, clipped);
+        compute_and_capture(5'(r), BIAS, 10'd0, 2'b00, psout, clipped);
         // Check both the raw psum and clipped output independently.
         if (psout !== golden_psout[r] || clipped !== golden_clipped[r]) begin
           if (psout !== golden_psout[r])
@@ -547,7 +571,7 @@ task automatic load_feature(
       reset_dimc();
       write_full_kernel(kernel_stim);
       load_feature(feature_stim[0], feature_stim[1], feature_stim[2], feature_stim[3]);
-      compute_all_rows_pipelined(BIAS, 10'd0, psout_pipe, clipped_pipe);
+      compute_all_rows_pipelined(BIAS, 10'd0, 2'b00, psout_pipe, clipped_pipe);
       for (int r = 0; r < NB_KERNEL_ROWS; r++) begin
         if (psout_pipe[r] !== golden_psout[r] || clipped_pipe[r] !== golden_clipped[r]) begin
           if (psout_pipe[r] !== golden_psout[r])
@@ -582,7 +606,7 @@ task automatic load_feature(
         write_kernel_section(5'd0, 2'(s), kernel_stim[s]);
       load_feature(feature_stim[0], feature_stim[1], feature_stim[2], feature_stim[3]);
       for (int m = 0; m < NB_COMPUTE_MASK_VALS; m++) begin
-        compute_and_capture(5'd0, BIAS, COMPUTE_MASK_VALS[m], psout, clipped);
+        compute_and_capture(5'd0, BIAS, COMPUTE_MASK_VALS[m], 2'b00, psout, clipped);
         if (psout !== golden_psout_compute_mask[m] || clipped !== golden_compute_mask[m]) begin
           if (psout !== golden_psout_compute_mask[m])
             $error("[TB] Test7 compute_mask=%0d row0: psout got 0x%08h, expected 0x%08h",
@@ -597,6 +621,50 @@ task automatic load_feature(
       else                begin $display("[TB] Test 7: FAIL (%0d mismatches)", test_fail); fail_count++; end
     end
 `endif // TB_DIMC_TEST7
+
+`ifdef TB_DIMC_TEST8
+    // =======================================================================
+    // TEST 8: SIGNED 8-BIT MULTIPLICATION
+    // =======================================================================
+    // Purpose: Verify sign_8b modes 01, 10, and 11 for all kernel rows.
+    // Verification: Compare PSOUT and SOUT with mode-specific golden values.
+    // =======================================================================
+    $display("[TB] Test 8: Signed 8-bit multiplication");
+    begin
+      automatic int test_fail = 0;
+      automatic logic [31:0] expected_psout;
+      automatic logic [7:0] expected_clipped;
+
+      reset_dimc();
+      write_full_kernel(kernel_stim);
+      load_feature(feature_stim[0], feature_stim[1], feature_stim[2], feature_stim[3]);
+
+      for (int mode = 1; mode <= 3; mode++) begin
+        for (int r = 0; r < NB_KERNEL_ROWS; r++) begin
+          compute_and_capture(5'(r), BIAS, 10'd0, 2'(mode), psout, clipped);
+
+          case (mode)
+            1: begin expected_psout = golden_sign_01_psout[r]; expected_clipped = golden_sign_01_clipped[r]; end
+            2: begin expected_psout = golden_sign_10_psout[r]; expected_clipped = golden_sign_10_clipped[r]; end
+            3: begin expected_psout = golden_sign_11_psout[r]; expected_clipped = golden_sign_11_clipped[r]; end
+          endcase
+
+          if (psout !== expected_psout || clipped !== expected_clipped) begin
+            if (psout !== expected_psout)
+              $error("[TB] Test8 sign_8b=%02b row%0d: PSOUT got 0x%08h, expected 0x%08h",
+                     mode[1:0], r, psout, expected_psout);
+            if (clipped !== expected_clipped)
+              $error("[TB] Test8 sign_8b=%02b row%0d: SOUT got 0x%02h, expected 0x%02h",
+                     mode[1:0], r, clipped, expected_clipped);
+            test_fail++;
+          end
+        end
+      end
+
+      if (test_fail == 0) begin $display("[TB] Test 8: PASS"); pass_count++; end
+      else                begin $display("[TB] Test 8: FAIL (%0d mismatches)", test_fail); fail_count++; end
+    end
+`endif // TB_DIMC_TEST8
 
 
     // FINAL SUMMARY

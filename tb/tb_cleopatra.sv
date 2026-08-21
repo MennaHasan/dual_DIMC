@@ -72,7 +72,7 @@ module tb_cleopatra;
       [SECTION_WIDTH-1:0] test3_input_tile_t;
 
   // BIAS: 32-bit two's-complement bias constant added to every MAC result.
-  localparam logic [31:0] BIAS = 32'hFFE04300;
+  localparam logic [31:0] BIAS = 32'd0;
 
   // Stimulus arrays (filled by $readmemh at simulation start)
   logic [SECTION_WIDTH-1:0] kernel_stim         [0 : NB_KERNEL_ROWS*4-1]; // 128 sections

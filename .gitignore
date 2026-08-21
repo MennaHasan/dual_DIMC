@@ -6,3 +6,14 @@ etch*
 
 # Generated simulation artefacts (bender binary, compiled libs, waveforms)
 sim/
+
+# Generated stimulus and golden-data files
+stimuli/**/*.txt
+
+# Python bytecode caches
+**/__pycache__/
+*.py[cod]
+
+# Always track repository documentation
+!docs/
+!docs/**

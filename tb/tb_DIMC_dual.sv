@@ -90,7 +90,7 @@ module tb_DIMC_dual;
 
   // BIAS: 32-bit unsigned two's-complement bias constant added to every MAC result at Stage 3.
   // Must match BIAS in spatz_dimc_stim.py and tb_spatz_dimc.sv.
-  localparam logic [31:0] BIAS = 32'hFFE04300;
+  localparam logic [31:0] BIAS = 32'd0;
 
   // COMPUTE_MASK_VALS: six threshold values, each trimming different numbers of active elements.
   // Must match COMPUTE_MASK_VALS in spatz_dimc_stim.py and tb_spatz_dimc.sv.

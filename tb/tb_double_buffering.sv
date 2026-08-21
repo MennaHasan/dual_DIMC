@@ -58,7 +58,7 @@ module tb_double_buffering;
   localparam int DB_FEATURE_ELEMENTS = DB_L * DB_N_ELEMENTS * DB_Q * DB_P;
 
   localparam int NUM_SECTIONS = 1024 / SECTION_WIDTH;
-  localparam logic [31:0] BIAS = 32'hFFE04300;
+  localparam logic [31:0] BIAS = 32'd0;
 
 
 

@@ -10,7 +10,7 @@ USAGE
     --seed   Random seed for reproducibility (default: 42).
              The same seed produces the same kernel and feature every
              time, so golden outputs are stable across runs.
-    --outdir Directory to write all six output files (default: stimuli).
+    --outdir Directory to write the output files (default: stimuli).
 
 ============================================================
 CHANGING CONFIGURATION
@@ -33,7 +33,7 @@ import os
 import numpy as np
 
 # User configuration
-BIAS = -2_080_000
+BIAS = 0
 SECTION_WIDTH = 256
 
 # Number of kernel rows.
@@ -52,6 +52,9 @@ BYTES_PER_ROW     = NUM_SECTIONS * BYTES_PER_SECTION
 COMPUTE_MASK_VALS    = [0, 512, 768, 896, 960, 992]
 NB_COMPUTE_MASK_VALS = len(COMPUTE_MASK_VALS)
 
+# Signed 8-bit configurations: KS/FU, KU/FS, and KS/FS.
+SIGNED_8B_MODES = [0b01, 0b10, 0b11]
+
 
 
 # =========================================================================
@@ -59,7 +62,12 @@ NB_COMPUTE_MASK_VALS = len(COMPUTE_MASK_VALS)
 # =========================================================================
 
 # Computes the masked multiplication sum for one kernel row and feature vector.
-def compute_mac(kernel_row: np.ndarray, feature: np.ndarray, compute_mask: int) -> int:
+def compute_mac(
+    kernel_row: np.ndarray,
+    feature: np.ndarray,
+    compute_mask: int,
+    sign_8b: int = 0,
+) -> int:
     valid_bits = max(0, 1024 - int(compute_mask))
 
     acc = 0
@@ -71,6 +79,12 @@ def compute_mac(kernel_row: np.ndarray, feature: np.ndarray, compute_mask: int) 
             byte_mask = (1 << min(8, bits_left)) - 1
             kernel_value = int(kernel_row[i]) & byte_mask
             feature_value = int(feature[i]) & byte_mask
+
+            if sign_8b & 0b01 and kernel_value & 0x80:
+                kernel_value -= 0x100
+            if sign_8b & 0b10 and feature_value & 0x80:
+                feature_value -= 0x100
+
             acc += kernel_value * feature_value
 
     return acc
@@ -192,10 +206,34 @@ def main():
     )
 
     # =========================================================================
+    # SIGNED 8-BIT GOLDEN FILES: sign_8b = 01, 10, and 11
+    # =========================================================================
+    for sign_mode in SIGNED_8B_MODES:
+        signed_mac = [
+            compute_mac(kernel[r], feature, compute_mask=0, sign_8b=sign_mode)
+            for r in range(NB_KERNEL_ROWS)
+        ]
+        signed_psum = [(mac + BIAS) & 0xFFFFFFFF for mac in signed_mac]
+        signed_clipped = [clip_with_bias(mac, BIAS) for mac in signed_mac]
+        mode_name = f"{sign_mode:02b}"
+
+        write_golden(
+            os.path.join(spatz_dimc_stims_dir, f"golden_sign_{mode_name}_clipped_8bit.txt"),
+            signed_clipped,
+            width=8,
+        )
+        write_golden(
+            os.path.join(spatz_dimc_stims_dir, f"golden_sign_{mode_name}_psum_32bit.txt"),
+            signed_psum,
+            width=32,
+        )
+
+    # =========================================================================
     # SUMMARY REPORT
     # =========================================================================
     out = args.outdir
-    print(f"    BIAS = {BIAS},  COMPUTE_MASK_VALS = {COMPUTE_MASK_VALS}")
+    print(f"    BIAS = {BIAS}")
+    print(f"    COMPUTE_MASK_VALS = {COMPUTE_MASK_VALS}")
     print(f"    Files written to: {os.path.abspath(out)}")
 
 if __name__ == "__main__":

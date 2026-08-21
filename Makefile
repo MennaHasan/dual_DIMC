@@ -105,4 +105,5 @@ hw-clean:
 	rm -f  $(CLEO_TEST2_STIM_DIR)/*.txt
 	rm -f  $(CLEO_TEST3_STIM_DIR)/*.txt
 	rm -f  $(DOUBLE_BUFFERING_STIM_DIR)/*.txt
+	rm -rf $(DIMC_STIM_DIR)/__pycache__
 	rm -f  etch*
