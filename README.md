@@ -1,6 +1,6 @@
 # dual_DIMC
-Implementation of two independently controlled DIMC macros with shared FIFO
-data paths and double buffering. `clk` and `rst_n` are shared. Every other DIMC
+Implementation of two independently controlled dimc macros with shared FIFO
+data paths and double buffering. `clk` and `rst_n` are shared. Every other dimc
 control input is provided independently using `_m0` and `_m1` ports. `sel` only
 chooses which macro output is forwarded to the output FIFO; it does not gate
 either macro's input controls.

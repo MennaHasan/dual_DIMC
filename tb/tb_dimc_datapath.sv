@@ -6,7 +6,7 @@
  * ============================================================
  * Standalone unit test for dimc_datapath (rtl/dimc_datapath.sv) --
  * the module that bridges HWPE-Stream (valid/ready) handshakes to
- * spatz_DIMC_dual's raw push/full/pop/empty FIFO protocol and sequences
+ * spatz_dimc_dual's raw push/full/pop/empty FIFO protocol and sequences
  * its control pins (WA/FA/RA, WCSN/WEN/FCSN/COMPE/RCSN*).
  *
  * No dimc_streamer/TCDM/register-file is involved here -- this directly
@@ -15,7 +15,7 @@
  * consumer, then checks the results against the SAME golden vectors used
  * by tb_dimc_dual.sv (stimuli/spatz_dimc_stims/golden_psum_32bit.txt), reusing the
  * same kernel/feature stimuli. This proves the bridge + sequencer inside
- * dimc_datapath reproduce spatz_DIMC_dual's known-good behavior (verified
+ * dimc_datapath reproduce spatz_dimc_dual's known-good behavior (verified
  * directly, in tb_dimc_dual.sv) when driven purely through HWPE-Stream.
  */
 

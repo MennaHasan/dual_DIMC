@@ -26,7 +26,7 @@ module dimc_datapath
   localparam int unsigned NB_KERNEL_SECTIONS = NB_KERNEL_ROWS * NUM_SECTIONS; // total kernel sections per job (=128)
 
   // =========================================================================
-  // spatz_DIMC_dual instance and its raw FIFO/control ports
+  // spatz_dimc_dual instance and its raw FIFO/control ports
   // =========================================================================
   logic                     sel;
   logic                     compe, fcsn, rcsn, rcsn0, rcsn1, rcsn2, rcsn3, wcsn, wen;
@@ -50,7 +50,7 @@ module dimc_datapath
   logic                      out_pop, out_full, out_empty;
   logic [31:0]               out_data;
 
-  spatz_DIMC_dual #(
+  spatz_dimc_dual #(
     .SECTION_WIDTH  ( SECTION_WIDTH  ),
     .INP_FIFO_DEPTH ( INP_FIFO_DEPTH ),
     .WGT_FIFO_DEPTH ( WGT_FIFO_DEPTH ),

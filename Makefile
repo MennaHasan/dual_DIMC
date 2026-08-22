@@ -1,5 +1,6 @@
-# Makefile for dual_DIMC
+# Makefile for cleopatra_dimc
 # Author: Mennatalla Hassan, University of Bologna
+# email: mennatalla.hassan@studio.unibo.it
 
 # ── Directories ───────────────────────────────────────────────
 RTL_DIR     := rtl

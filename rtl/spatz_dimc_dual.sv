@@ -1,45 +1,44 @@
-// spatz_DIMC_dual.sv
-//
-// ============================================================
-// PURPOSE
-// ============================================================
-// Structural RTL wrapper around TWO spatz_dimc macros.
-// Contents: 
-//      2 DIMC Macros (u_mac0, u_mac1)      
-//      wgt_fifo (Weight FIFO, depth=128):
-//      inp_fifo (Input/Feature FIFO, depth=8):
-//      out_fifo (Output FIFO, depth=64):
-// ============================================================
-// INDEPENDENT CONTROL / OUTPUT SELECT
-// ============================================================
-// Each macro has an independent set of control inputs. clk and rst_n are the
-// only shared control signals. sel does not gate commands; it only chooses the
-// macro whose outputs are forwarded to the wrapper and output FIFO.
-//
-// ============================================================
-// DATA PATHS
-// ============================================================
-// D  (kernel write data):  wgt_fifo.data_out → both macros; each macro's
-//                          independent WCSN/WEN controls whether it writes.
-// FD (feature data):       inp_fifo.data_out → both macros; each macro's
-//                          independent FCSN controls whether it loads.
-// 32-bit psum (PSOUT):     sel-selected macro → out_fifo.
-//
+/* spatz_dimc_dual.sv
+*
+* ============================================================
+* Structure:
+* ============================================================
+*      2 DIMC Macros (u_mac0, u_mac1)      
+*      wgt_fifo (Weight FIFO, depth=128):
+*      inp_fifo (Input/Feature FIFO, depth=8):
+*      out_fifo (Output FIFO, depth=64):
+* ============================================================
+* INDEPENDENT CONTROL / OUTPUT SELECT
+* ============================================================
+* Each macro has an independent set of control inputs. 
+* clk and rst_n are the only shared control signals. 
+* sel does not gate commands; it only chooses the
+* macro whose outputs are forwarded to the output FIFO.
+*
+* ============================================================
+* DATA PATHS FOR INPUTS AND OUTPUTS
+* ============================================================
+* D  (kernel write data):  wgt_fifo.data_out → both macros; each macro's
+*                          independent WCSN/WEN controls whether it writes.
+* FD (feature data):       inp_fifo.data_out → both macros; each macro's
+*                          independent FCSN controls whether it loads.
+* 32-bit psum (PSOUT):     sel-selected macro → out_fifo.
+*/
 
 `timescale 1ns/1ps
 
 // =============================================================================
-// MODULE: spatz_DIMC_dual — wrapper around two spatz_dimc instances
+// MODULE DEFINITION
 // =============================================================================
-module spatz_DIMC_dual #(
+module spatz_dimc_dual #(
     // Width of each 256-bit SRAM section (must match spatz_dimc parameter).
     parameter int SECTION_WIDTH  = 256,
-    // FIFO depths in number of SECTION_WIDTH-bit entries:
+    // FIFO depths
     parameter int INP_FIFO_DEPTH = 8,    // input feature FIFO:  2 complete feature vectors (2 × 4 = 8)
     parameter int WGT_FIFO_DEPTH = 128,  // weight FIFO:         1 complete kernel (32 rows × 4 sections)
     parameter int OUT_FIFO_DEPTH = 64    // output result FIFO:  2 complete MatVec outputs (2 × 32 = 64)
 )(
-    input  logic clk,     // single clock for all FIFOs and both DIMC macros
+    input  logic clk,     // single clock for all sub modules
     input  logic rst_n,   // active-low reset; clears FIFOs, DIMC pipeline regs, and memories
 
     // sel: DIMC selector
@@ -69,23 +68,23 @@ module spatz_DIMC_dual #(
     input  logic [9:0]               compute_mask_m1,
     input  logic [1:0]               sign_8b_m1,
 
-    // Outputs — muxed from the CURRENTLY SELECTED DIMC.
+    // Outputs — muxed from the currently selected DIMC.
     output logic                     READYN,
     output logic [31:0]              PSOUT,
 
-    // Input FIFO 
+    // Input FIFO signals
     input  logic                     inp_push,      
     input  logic [SECTION_WIDTH-1:0] inp_data,      
     output logic                     inp_full,      
     output logic                     inp_empty,     
 
-    // Weight FIFO 
+    // Weight FIFO signals
     input  logic                     wgt_push,      
     input  logic [SECTION_WIDTH-1:0] wgt_data,      
     output logic                     wgt_full,      
     output logic                     wgt_empty,    
 
-    // Output FIFO
+    // Output FIFO signals
     input  logic                     out_pop,
     output logic [31:0]              out_data,
     output logic                     out_full,
@@ -93,7 +92,7 @@ module spatz_DIMC_dual #(
 );
 
     // =========================================================================
-    // Input FIFO 
+    // Input FIFO instantiation
     // =========================================================================
     logic                     inp_pop;       
     logic [SECTION_WIDTH-1:0] inp_rdata;     
@@ -117,7 +116,7 @@ module spatz_DIMC_dual #(
     );
 
     // =========================================================================
-    // Weight FIFO 
+    // Weight FIFO instantiation
     // =========================================================================
     logic                     wgt_pop;       
     logic [SECTION_WIDTH-1:0] wgt_rdata;     
@@ -141,7 +140,7 @@ module spatz_DIMC_dual #(
     );
 
     // =========================================================================
-    // Output FIFO
+    // Output FIFO instantiation
     // =========================================================================
     logic        out_push;
     logic [31:0] out_wdata;
@@ -242,22 +241,18 @@ module spatz_DIMC_dual #(
         .sign_8b (sign_8b_m1)
     );
 
-    // =========================================================================
-    // OUTPUT MUX + FIFO AUTO-MANAGEMENT (combinational)
-    // =========================================================================
-    // sel only selects outputs. Both macros always receive their own controls.
-    // wgt_pop fires when either macro requests a write; simultaneous writes
-    // consume one shared FIFO word and present it to both macros.
-    //
-    // inp_pop fires when either macro requests a feature load.
-    //
-    //   out_push: Fires when the selected DIMC's READYN goes low (pipeline done).
-    //
-    //   NOTE: The FIFO registers the push at P(N+5).  Testbench must wait 1 extra cycle.
-    // =========================================================================
+    /* =========================================================================
+    *  OUTPUT MUX + FIFO AUTO-MANAGEMENT (combinational)
+    * =========================================================================
+    * wgt_pop fires when either macro requests a write
+    * NOTE: simultaneous writes consume one shared FIFO word and present it to both macros.
+    *
+    * inp_pop fires when either macro requests a feature load.
+    *
+    * out_push: Fires when the selected DIMC's READYN goes low (pipeline done).
+    * =========================================================================*/
     always_comb begin
-        // --- Output mux: expose selected macro's outputs (READYN/PSOUT as
-        // ports; Q remains an internal selected signal) ---
+        // --- Output mux ---
         READYN  = m_readyn[sel];
         Q       = m_q[sel];
         PSOUT   = m_psout[sel];

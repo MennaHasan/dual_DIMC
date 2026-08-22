@@ -1,7 +1,7 @@
 /*
  * cleopatra.sv
  *
- * Wires a spatz_DIMC_dual and an accumulator together: the dual DIMC's
+ * Wires a spatz_dimc_dual and an accumulator together: the dual DIMC's
  * output stream (out_data) feeds directly into the accumulator's input.
 */
 
@@ -84,7 +84,7 @@ module cleopatra #(
     // dimc_dual output stream -> accumulator input 
     logic [31:0] out_data;
 
-    spatz_DIMC_dual #(
+    spatz_dimc_dual #(
         .SECTION_WIDTH  (SECTION_WIDTH ),
         .INP_FIFO_DEPTH (INP_FIFO_DEPTH),
         .WGT_FIFO_DEPTH (WGT_FIFO_DEPTH),

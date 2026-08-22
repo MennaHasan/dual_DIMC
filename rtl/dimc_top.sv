@@ -10,7 +10,7 @@ module dimc_top
   parameter int unsigned MP  = 3,         // number of TCDM master ports (one per data stream: input, kernel, output)
   parameter int unsigned ID  = 10,        
   
-  parameter int unsigned DATA_WIDTH = 256      // bit-width of a single input/kernel/output section (must match spatz_DIMC_dual's SECTION_WIDTH)
+  parameter int unsigned DATA_WIDTH = 256      // bit-width of a single input/kernel/output section (must match spatz_dimc_dual's SECTION_WIDTH)
 )
 (
   // global signals

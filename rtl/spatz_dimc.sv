@@ -1,4 +1,4 @@
-// DIMC.sv created
+// dimc.sv created
 
 `timescale 1ns/1ps
 

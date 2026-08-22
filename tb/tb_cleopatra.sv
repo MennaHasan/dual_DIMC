@@ -107,7 +107,7 @@ module tb_cleopatra;
   logic count_test3_cycles = 1'b0;
   longint unsigned test3_cycle_count = 0;
 
-  // sel: 0 = u_mac0  1 = u_mac1 (inside spatz_DIMC_dual)
+  // sel: 0 = u_mac0  1 = u_mac1 (inside spatz_dimc_dual)
   logic sel = 1'b0;
 
   // All initial values are the safe idle state (no operation firing at time 0).
